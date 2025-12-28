@@ -10,6 +10,7 @@ import { promptForRepo, promptExistingConfig } from './prompts.js';
 import { checkClaudeCli, addConfig } from './claude.js';
 import { getSetupUrl, AUTH_TIMEOUT_MS } from './constants.js';
 import { enforceLatestVersion } from './version-check.js';
+import { requestPermissionOrExit } from './permissions.js';
 
 /** Supported platform for this release */
 const SUPPORTED_PLATFORM = 'darwin';
@@ -33,6 +34,9 @@ export async function main(): Promise<void> {
     console.error('Join the Discord for updates: https://ceetrix.com/discord\n');
     process.exit(1);
   }
+
+  // Single upfront permission for all CLI operations
+  await requestPermissionOrExit();
 
   // Check Claude CLI is available
   const claudeAvailable = await checkClaudeCli();

@@ -11,13 +11,6 @@ vi.mock('which', () => ({
   default: vi.fn().mockResolvedValue('/opt/homebrew/bin/claude'),
 }));
 
-// Mock permissions to auto-grant in tests
-vi.mock('../src/permissions.js', () => ({
-  requestPermission: vi.fn().mockResolvedValue(true),
-  hasSessionTrust: vi.fn().mockReturnValue(true),
-  resetSessionTrust: vi.fn(),
-}));
-
 // Mock constants
 vi.mock('../src/constants.js', () => ({
   getMcpServerUrl: () => 'https://api.ceetrix.com/sse',

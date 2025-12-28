@@ -1,75 +1,72 @@
 /**
  * Permission-based execution module
  *
- * Prompts user before executing any binary, making it clear:
- * - What command will be run
- * - Why it's being run
- * - All results stay local unless user chooses to share
+ * Single upfront permission for all CLI operations.
+ * All-or-nothing: either user trusts ceetrix to run commands or exits.
  */
 
 import { confirm } from '@inquirer/prompts';
 
-/** Whether user has granted blanket trust for this session */
-let sessionTrustGranted = false;
+/** Whether permission has been granted for this session */
+let permissionGranted = false;
+
+/** Commands that will be executed */
+const COMMANDS_DESCRIPTION = `
+  • which claude          (find Claude CLI location)
+  • claude --version      (verify it's Claude Code)
+  • claude mcp list       (check existing config)
+  • claude mcp add-json   (add Ceetrix server)
+  • claude mcp remove     (if reconfiguring)
+`;
 
 /**
- * Request permission to execute a command.
- *
- * @param command - The command that will be executed
- * @param reason - Why this command needs to run
- * @returns true if permission granted, false otherwise
+ * Request upfront permission for all CLI operations.
+ * Must be called once at startup. Exits if denied.
  */
-export async function requestPermission(
-  command: string,
-  reason: string
-): Promise<boolean> {
-  // If user already granted session trust, allow
-  if (sessionTrustGranted) {
-    return true;
+export async function requestPermissionOrExit(): Promise<void> {
+  if (permissionGranted) {
+    return;
   }
 
   console.log('');
-  console.log(`┌─ Permission Request ─────────────────────────────────────────┐`);
-  console.log(`│  Command:  ${command.slice(0, 50).padEnd(50)}│`);
-  console.log(`│  Reason:   ${reason.slice(0, 50).padEnd(50)}│`);
-  console.log(`│                                                              │`);
-  console.log(`│  All results stay local on your machine.                     │`);
-  console.log(`│  Nothing is sent externally unless you choose to share.      │`);
-  console.log(`└──────────────────────────────────────────────────────────────┘`);
+  console.log('┌─ Permission Request ─────────────────────────────────────────┐');
+  console.log('│                                                              │');
+  console.log('│  Ceetrix needs to run the following commands:                │');
+  console.log('│                                                              │');
+  for (const line of COMMANDS_DESCRIPTION.trim().split('\n')) {
+    console.log(`│  ${line.padEnd(58)}│`);
+  }
+  console.log('│                                                              │');
+  console.log('│  All results stay local on your machine.                     │');
+  console.log('│  Nothing is sent externally unless you choose to share.      │');
+  console.log('│                                                              │');
+  console.log('└──────────────────────────────────────────────────────────────┘');
+  console.log('');
 
   const allowed = await confirm({
-    message: 'Allow this command?',
+    message: 'Allow Ceetrix to run these commands?',
     default: true,
   });
 
   if (!allowed) {
-    return false;
+    console.log('\nPermission denied. Exiting.\n');
+    process.exit(0);
   }
 
-  // Ask if they want to trust all commands this session
-  const trustAll = await confirm({
-    message: 'Trust all commands for this session? (skip future prompts)',
-    default: false,
-  });
-
-  if (trustAll) {
-    sessionTrustGranted = true;
-    console.log('Session trust granted. Future commands will run without prompts.\n');
-  }
-
-  return true;
+  permissionGranted = true;
 }
 
 /**
- * Check if session trust has been granted.
+ * Check if permission has been granted.
+ * For internal use by other modules.
  */
-export function hasSessionTrust(): boolean {
-  return sessionTrustGranted;
+export function hasPermission(): boolean {
+  return permissionGranted;
 }
 
 /**
- * Reset session trust (for testing).
+ * Reset permission state (for testing).
  */
-export function resetSessionTrust(): void {
-  sessionTrustGranted = false;
+export function resetPermission(): void {
+  permissionGranted = false;
 }

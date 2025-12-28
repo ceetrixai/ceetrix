@@ -1,14 +1,13 @@
 /**
  * Debug diagnostics for troubleshooting installation issues
  *
- * All command execution requires explicit user permission.
- * Results stay local unless user chooses to share.
+ * Note: --debug mode runs without permission prompt since it's
+ * explicitly invoked by the user for diagnostic purposes.
  */
 
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import which from 'which';
-import { requestPermission } from './permissions.js';
 
 const execAsync = promisify(exec);
 
@@ -35,7 +34,7 @@ export async function printDebugInfo(): Promise<void> {
   console.log('\nCeetrix Debug Diagnostics');
   console.log('═════════════════════════\n');
 
-  // Platform info (no permission needed - reads process info)
+  // Platform info
   console.log('Platform');
   console.log('────────');
   console.log(`  OS:           ${process.platform}`);
@@ -43,7 +42,7 @@ export async function printDebugInfo(): Promise<void> {
   console.log(`  Node:         ${process.version}`);
   console.log('');
 
-  // PATH (no permission needed - reads environment)
+  // PATH
   console.log('PATH');
   console.log('────');
   const pathDirs = (process.env.PATH || '').split(':');
@@ -52,88 +51,68 @@ export async function printDebugInfo(): Promise<void> {
   }
   console.log('');
 
-  // Request permission for CLI detection
-  const detectAllowed = await requestPermission(
-    'which claude; claude --version (multiple paths)',
-    'Detect and verify Claude Code installations'
-  );
-
+  // Claude CLI detection
   console.log('Claude CLI Detection');
   console.log('────────────────────');
 
-  if (!detectAllowed) {
-    console.log('  (Permission denied - skipping CLI detection)');
-    console.log('');
-  } else {
-    // Helper to check if path is real Claude Code
-    async function checkClaudeCode(path: string): Promise<string> {
-      try {
-        const { stdout } = await execAsync(`"${path}" --version`, {
-          timeout: VERSION_CHECK_TIMEOUT_MS,
-        });
-        if (stdout.includes(CLAUDE_CODE_MARKER)) {
-          return `✓ Claude Code (${stdout.trim()})`;
-        }
-        return `✗ NOT Claude Code (responds: ${stdout.trim().slice(0, 40)})`;
-      } catch (e) {
-        const err = e as { killed?: boolean; code?: string };
-        if (err.killed) return '✗ TIMEOUT (possibly stale install)';
-        return '✗ NOT FOUND or ERROR';
-      }
-    }
-
-    // Try which
-    let whichPath: string | null = null;
+  // Helper to check if path is real Claude Code
+  async function checkClaudeCode(path: string): Promise<string> {
     try {
-      whichPath = await which('claude');
-      const status = await checkClaudeCode(whichPath);
-      console.log(`  which('claude'):  ${whichPath}`);
-      console.log(`                    ${status}`);
-    } catch {
-      console.log(`  which('claude'):  NOT IN PATH`);
+      const { stdout } = await execAsync(`"${path}" --version`, {
+        timeout: VERSION_CHECK_TIMEOUT_MS,
+      });
+      if (stdout.includes(CLAUDE_CODE_MARKER)) {
+        return `✓ Claude Code (${stdout.trim()})`;
+      }
+      return `✗ NOT Claude Code (responds: ${stdout.trim().slice(0, 40)})`;
+    } catch (e) {
+      const err = e as { killed?: boolean; code?: string };
+      if (err.killed) return '✗ TIMEOUT (possibly stale install)';
+      return '✗ NOT FOUND or ERROR';
     }
-
-    // Try common paths
-    for (const path of COMMON_CLAUDE_PATHS) {
-      if (path === whichPath) continue; // Already checked
-      const status = await checkClaudeCode(path);
-      console.log(`  ${path}:`);
-      console.log(`                    ${status}`);
-    }
-    console.log('');
   }
 
-  // Request permission for MCP config check
-  const mcpAllowed = await requestPermission(
-    'claude mcp list',
-    'Check existing Ceetrix MCP configuration'
-  );
+  // Try which
+  let whichPath: string | null = null;
+  try {
+    whichPath = await which('claude');
+    const status = await checkClaudeCode(whichPath);
+    console.log(`  which('claude'):  ${whichPath}`);
+    console.log(`                    ${status}`);
+  } catch {
+    console.log(`  which('claude'):  NOT IN PATH`);
+  }
 
-  console.log('Ceetrix MCP Config');
-  console.log('──────────────────');
-
-  if (!mcpAllowed) {
-    console.log('  (Permission denied - skipping config check)');
-  } else {
-    try {
-      const { stdout } = await execAsync('claude mcp list', { timeout: DIAG_TIMEOUT_MS });
-      if (stdout.includes('ceetrix:')) {
-        const lines = stdout.split('\n');
-        const ceetrixLine = lines.find(l => l.includes('ceetrix'));
-        console.log(`  Status:  CONFIGURED`);
-        if (ceetrixLine) {
-          console.log(`  Entry:   ${ceetrixLine.trim()}`);
-        }
-      } else {
-        console.log(`  Status:  NOT CONFIGURED`);
-      }
-    } catch {
-      console.log(`  Status:  UNABLE TO CHECK (claude mcp list failed)`);
-    }
+  // Try common paths
+  for (const path of COMMON_CLAUDE_PATHS) {
+    if (path === whichPath) continue; // Already checked
+    const status = await checkClaudeCode(path);
+    console.log(`  ${path}:`);
+    console.log(`                    ${status}`);
   }
   console.log('');
 
-  // Shell info (no permission needed - reads environment)
+  // Existing MCP config
+  console.log('Ceetrix MCP Config');
+  console.log('──────────────────');
+  try {
+    const { stdout } = await execAsync('claude mcp list', { timeout: DIAG_TIMEOUT_MS });
+    if (stdout.includes('ceetrix:')) {
+      const lines = stdout.split('\n');
+      const ceetrixLine = lines.find(l => l.includes('ceetrix'));
+      console.log(`  Status:  CONFIGURED`);
+      if (ceetrixLine) {
+        console.log(`  Entry:   ${ceetrixLine.trim()}`);
+      }
+    } else {
+      console.log(`  Status:  NOT CONFIGURED`);
+    }
+  } catch {
+    console.log(`  Status:  UNABLE TO CHECK (claude mcp list failed)`);
+  }
+  console.log('');
+
+  // Shell info
   console.log('Shell Environment');
   console.log('─────────────────');
   console.log(`  SHELL:        ${process.env.SHELL || 'not set'}`);

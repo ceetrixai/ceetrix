@@ -33,6 +33,18 @@ vi.mock('../src/constants.js', () => ({
   AUTH_TIMEOUT_MS: 100, // Short timeout for tests
 }));
 
+// Mock permissions - auto-grant in tests
+vi.mock('../src/permissions.js', () => ({
+  requestPermissionOrExit: vi.fn().mockResolvedValue(undefined),
+  hasPermission: vi.fn().mockReturnValue(true),
+  resetPermission: vi.fn(),
+}));
+
+// Mock version check - skip in tests
+vi.mock('../src/version-check.js', () => ({
+  enforceLatestVersion: vi.fn().mockResolvedValue(undefined),
+}));
+
 import { main } from '../src/index.js';
 import { detectGitRemote } from '../src/git.js';
 import { checkExistingConfig } from '../src/config.js';

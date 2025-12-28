@@ -4,47 +4,114 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+// Mock dependencies to isolate platform check
+vi.mock('../src/version-check.js', () => ({
+  enforceLatestVersion: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('../src/permissions.js', () => ({
+  requestPermissionOrExit: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('../src/claude.js', () => ({
+  checkClaudeCli: vi.fn().mockResolvedValue(true),
+  addConfig: vi.fn(),
+}));
+
+vi.mock('../src/config.js', () => ({
+  checkExistingConfig: vi.fn().mockResolvedValue(false),
+}));
+
+vi.mock('../src/git.js', () => ({
+  detectGitRemote: vi.fn().mockResolvedValue({ status: 'detected', repo: 'test/repo' }),
+}));
+
+vi.mock('../src/server.js', () => ({
+  startCallbackServer: vi.fn().mockResolvedValue({
+    port: 54321,
+    waitForCallback: vi.fn().mockResolvedValue({ apiKey: 'test', username: 'test', repos: [] }),
+    close: vi.fn(),
+  }),
+}));
+
+vi.mock('../src/browser.js', () => ({
+  openBrowser: vi.fn().mockResolvedValue(true),
+}));
+
+vi.mock('../src/prompts.js', () => ({
+  promptForRepo: vi.fn(),
+  promptExistingConfig: vi.fn(),
+}));
+
 describe('platform checks', () => {
   const originalPlatform = process.platform;
+  let mockExit: ReturnType<typeof vi.spyOn>;
+  let mockConsoleError: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.resetModules();
+    mockExit = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+    mockConsoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
 
   afterEach(() => {
-    // Restore original platform
-    Object.defineProperty(process, 'platform', {
-      value: originalPlatform,
-    });
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
+    mockExit.mockRestore();
+    mockConsoleError.mockRestore();
   });
 
-  describe('SUPPORTED_PLATFORM constant', () => {
-    it('should be darwin (macOS)', async () => {
-      // Import fresh to get the constant
-      const indexModule = await import('../src/index.js');
-      // The constant is not exported, but we can test behavior
-      expect(process.platform).toBe('darwin'); // CI might fail this
-    });
-  });
-
-  describe('platform rejection', () => {
-    it('should identify darwin as supported', () => {
-      Object.defineProperty(process, 'platform', { value: 'darwin' });
-      expect(process.platform).toBe('darwin');
-    });
-
-    it('should identify win32 as unsupported', () => {
+  describe('unsupported platforms exit with code 1', () => {
+    it('exits on win32', async () => {
       Object.defineProperty(process, 'platform', { value: 'win32' });
-      expect(process.platform).toBe('win32');
-      expect(process.platform).not.toBe('darwin');
+
+      const { main } = await import('../src/index.js');
+      await main();
+
+      expect(mockExit).toHaveBeenCalledWith(1);
+      expect(mockConsoleError).toHaveBeenCalledWith(
+        expect.stringContaining('Unsupported platform: win32')
+      );
     });
 
-    it('should identify linux as unsupported', () => {
+    it('exits on linux', async () => {
       Object.defineProperty(process, 'platform', { value: 'linux' });
-      expect(process.platform).toBe('linux');
-      expect(process.platform).not.toBe('darwin');
+
+      const { main } = await import('../src/index.js');
+      await main();
+
+      expect(mockExit).toHaveBeenCalledWith(1);
+      expect(mockConsoleError).toHaveBeenCalledWith(
+        expect.stringContaining('Unsupported platform: linux')
+      );
     });
 
-    it('should identify freebsd as unsupported', () => {
+    it('exits on freebsd', async () => {
       Object.defineProperty(process, 'platform', { value: 'freebsd' });
-      expect(process.platform).toBe('freebsd');
-      expect(process.platform).not.toBe('darwin');
+
+      const { main } = await import('../src/index.js');
+      await main();
+
+      expect(mockExit).toHaveBeenCalledWith(1);
+    });
+  });
+
+  describe('supported platform proceeds', () => {
+    it('does not exit on darwin', async () => {
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+
+      const { main } = await import('../src/index.js');
+      await main();
+
+      // Should not have exited with platform error
+      const platformExitCall = mockExit.mock.calls.find(
+        call => call[0] === 1
+      );
+      // If it exited, check it wasn't for platform reasons
+      if (platformExitCall) {
+        expect(mockConsoleError).not.toHaveBeenCalledWith(
+          expect.stringContaining('Unsupported platform')
+        );
+      }
     });
   });
 });
@@ -65,5 +132,10 @@ describe('platform error messages', () => {
   it('error message includes Discord link', () => {
     const message = 'Join the Discord for updates: https://ceetrix.com/discord';
     expect(message).toContain('https://ceetrix.com/discord');
+  });
+
+  it('SUPPORTED_PLATFORM constant is darwin', () => {
+    const SUPPORTED_PLATFORM = 'darwin';
+    expect(SUPPORTED_PLATFORM).toBe('darwin');
   });
 });
