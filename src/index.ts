@@ -10,12 +10,23 @@ import { promptForRepo, promptExistingConfig } from './prompts.js';
 import { checkClaudeCli, addConfig } from './claude.js';
 import { getSetupUrl, AUTH_TIMEOUT_MS } from './constants.js';
 
+/** Supported platform for this release */
+const SUPPORTED_PLATFORM = 'darwin';
+
 /**
  * Main CLI entry point
  */
 export async function main(): Promise<void> {
   console.log('\nCeetrix Setup');
   console.log('─────────────\n');
+
+  // Platform check - macOS only for now
+  if (process.platform !== SUPPORTED_PLATFORM) {
+    console.error(`✗ Unsupported platform: ${process.platform}\n`);
+    console.error('Ceetrix currently supports macOS only.');
+    console.error('Windows and Linux support coming soon.\n');
+    process.exit(1);
+  }
 
   // Check Claude CLI is available
   const claudeAvailable = await checkClaudeCli();
