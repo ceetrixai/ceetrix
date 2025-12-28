@@ -114,7 +114,10 @@ export async function printDebugInfo(): Promise<void> {
   console.log('');
 
   console.log('─────────────────────────────────────────────────────');
-  console.log('Copy the above when reporting issues at:');
-  console.log('https://github.com/ceetrixai/ceetrix/issues');
+  console.log('Ceetrix currently supports macOS + Claude Code only.');
+  console.log('');
+  console.log('If you have this combination and still have issues,');
+  console.log('copy the above and post to the Ceetrix Discord:');
+  console.log('https://ceetrix.com/discord');
   console.log('');
 }

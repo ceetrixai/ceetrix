@@ -23,8 +23,10 @@ export async function main(): Promise<void> {
   // Platform check - macOS only for now
   if (process.platform !== SUPPORTED_PLATFORM) {
     console.error(`✗ Unsupported platform: ${process.platform}\n`);
-    console.error('Ceetrix currently supports macOS only.');
-    console.error('Windows and Linux support coming soon.\n');
+    console.error('Ceetrix currently supports macOS + Claude Code only.');
+    console.error('Windows and Linux support coming soon.');
+    console.error('');
+    console.error('Join the Discord for updates: https://ceetrix.com/discord\n');
     process.exit(1);
   }
 
@@ -32,8 +34,10 @@ export async function main(): Promise<void> {
   const claudeAvailable = await checkClaudeCli();
   if (!claudeAvailable) {
     console.error('✗ Claude Code CLI not found\n');
-    console.error('Install Claude Code first:');
-    console.error('https://claude.ai/download\n');
+    console.error('Install Claude Code first: https://claude.ai/download');
+    console.error('');
+    console.error('If Claude Code is installed, run: npx ceetrix --debug');
+    console.error('and post the output to: https://ceetrix.com/discord\n');
     process.exit(1);
   }
 
