@@ -1,12 +1,24 @@
 #!/usr/bin/env node
 import { main } from '../dist/index.js';
+import { printDebugInfo } from '../dist/debug.js';
 
-main()
-  .then(() => {
-    // @inquirer/prompts leaves stdin open - unref it so Node can exit
-    process.stdin.unref();
-  })
-  .catch((err) => {
-    console.error(err.message);
-    process.exit(1);
-  });
+const args = process.argv.slice(2);
+
+if (args.includes('--debug') || args.includes('-d')) {
+  printDebugInfo()
+    .then(() => process.exit(0))
+    .catch((err) => {
+      console.error('Debug failed:', err.message);
+      process.exit(1);
+    });
+} else {
+  main()
+    .then(() => {
+      // @inquirer/prompts leaves stdin open - unref it so Node can exit
+      process.stdin.unref();
+    })
+    .catch((err) => {
+      console.error(err.message);
+      process.exit(1);
+    });
+}
