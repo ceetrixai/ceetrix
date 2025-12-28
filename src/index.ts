@@ -14,7 +14,6 @@ import { getSetupUrl, AUTH_TIMEOUT_MS } from './constants.js';
  * Main CLI entry point
  */
 export async function main(): Promise<void> {
-  console.log('[DEBUG] main() started');
   console.log('\nCeetrix Setup');
   console.log('─────────────\n');
 
@@ -61,9 +60,7 @@ export async function main(): Promise<void> {
   }
 
   // Run the setup flow
-  console.log('[DEBUG] Calling runSetupFlow...');
   await runSetupFlow(repo);
-  console.log('[DEBUG] runSetupFlow completed, main() returning');
 }
 
 /**
@@ -160,13 +157,9 @@ async function runSetupFlow(repo: string): Promise<void> {
 
     // Show restart notice
     printRestartNotice();
-    console.log('[DEBUG] About to close server...');
   } finally {
-    console.log('[DEBUG] In finally block, calling close()...');
     close();
-    console.log('[DEBUG] Server closed');
   }
-  console.log('[DEBUG] runSetupFlow() returning');
 }
 
 /**
