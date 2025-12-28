@@ -7,7 +7,7 @@
 
 /** Base URL for Ceetrix API, can be overridden via CEETRIX_API_URL env var */
 export function getApiBaseUrl(): string {
-  return process.env.CEETRIX_API_URL || 'https://app.ceetrix.com';
+  return process.env.CEETRIX_API_URL || 'https://api.ceetrix.com';
 }
 
 /** Setup endpoint URL */
