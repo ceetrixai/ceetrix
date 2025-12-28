@@ -12,11 +12,11 @@ let permissionGranted = false;
 
 /** Commands that will be executed */
 const COMMANDS_DESCRIPTION = `
-  • which claude          (find Claude CLI location)
-  • claude --version      (verify it's Claude Code)
-  • claude mcp list       (check existing config)
-  • claude mcp add-json   (add Ceetrix server)
-  • claude mcp remove     (if reconfiguring)
+• which claude          (find Claude CLI location)
+• claude --version      (verify it's Claude Code)
+• claude mcp list       (check existing config)
+• claude mcp add-json   (add Ceetrix server)
+• claude mcp remove     (if reconfiguring)
 `;
 
 /**
