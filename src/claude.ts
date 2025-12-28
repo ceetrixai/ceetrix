@@ -7,12 +7,15 @@
  *
  * Verifies found binaries are actually Claude Code (not stale npm installs)
  * by checking --version output contains "Claude Code".
+ *
+ * All command execution requires explicit user permission.
  */
 
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import which from 'which';
 import { getMcpServerUrl } from './constants.js';
+import { requestPermission } from './permissions.js';
 
 const execAsync = promisify(exec);
 
@@ -37,6 +40,7 @@ let cachedClaudePath: string | null = null;
 
 /**
  * Verify a path is actually Claude Code by checking version output.
+ * Permission must already be granted before calling this.
  *
  * @param path - Path to executable
  * @returns true if responds with "Claude Code" in version output
@@ -56,10 +60,22 @@ async function isClaudeCode(path: string): Promise<boolean> {
 /**
  * Find claude executable by checking candidates in order.
  * Verifies each candidate is actually Claude Code (not a stale npm install).
+ * Requests permission before any execution.
  *
- * @returns Full path to claude executable, or null if not found
+ * @returns Full path to claude executable, or null if not found or permission denied
  */
 async function findClaudePath(): Promise<string | null> {
+  // Request permission to search for and verify Claude CLI
+  const allowed = await requestPermission(
+    'which claude; claude --version',
+    'Find and verify Claude Code installation'
+  );
+
+  if (!allowed) {
+    console.log('Permission denied. Cannot proceed without locating Claude CLI.\n');
+    return null;
+  }
+
   const candidates: string[] = [];
 
   // Try which first
@@ -108,7 +124,7 @@ export async function checkClaudeCli(): Promise<boolean> {
  * Add Ceetrix MCP server configuration to Claude Code.
  *
  * @param apiKey - The API key to use for authentication
- * @throws Error if Claude CLI not found or command fails
+ * @throws Error if Claude CLI not found, permission denied, or command fails
  */
 export async function addConfig(apiKey: string): Promise<void> {
   const claudePath = await getClaudePath();
@@ -125,9 +141,17 @@ export async function addConfig(apiKey: string): Promise<void> {
   };
 
   const configJson = JSON.stringify(config);
-
-  // Escape single quotes for shell
   const escaped = configJson.replace(/'/g, "'\\''");
+  const command = `claude mcp add-json ceetrix '...' --scope user`;
+
+  const allowed = await requestPermission(
+    command,
+    'Add Ceetrix server to Claude Code config'
+  );
+
+  if (!allowed) {
+    throw new Error('Permission denied to add configuration');
+  }
 
   await execAsync(`"${claudePath}" mcp add-json ceetrix '${escaped}' --scope user`, {
     timeout: CLAUDE_COMMAND_TIMEOUT_MS,
@@ -137,11 +161,20 @@ export async function addConfig(apiKey: string): Promise<void> {
 /**
  * Check if Ceetrix is already configured in Claude Code.
  *
- * @returns true if ceetrix server is configured
+ * @returns true if ceetrix server is configured, false if not or permission denied
  */
 export async function checkExistingConfig(): Promise<boolean> {
   const claudePath = await getClaudePath();
   if (!claudePath) return false;
+
+  const allowed = await requestPermission(
+    'claude mcp list',
+    'Check if Ceetrix is already configured'
+  );
+
+  if (!allowed) {
+    return false;
+  }
 
   try {
     const { stdout } = await execAsync(`"${claudePath}" mcp list`, {
@@ -156,12 +189,21 @@ export async function checkExistingConfig(): Promise<boolean> {
 /**
  * Remove Ceetrix configuration from Claude Code.
  *
- * @throws Error if Claude CLI not found or command fails
+ * @throws Error if Claude CLI not found, permission denied, or command fails
  */
 export async function removeConfig(): Promise<void> {
   const claudePath = await getClaudePath();
   if (!claudePath) {
     throw new Error('Claude CLI not found');
+  }
+
+  const allowed = await requestPermission(
+    'claude mcp remove ceetrix',
+    'Remove Ceetrix from Claude Code config'
+  );
+
+  if (!allowed) {
+    throw new Error('Permission denied to remove configuration');
   }
 
   await execAsync(`"${claudePath}" mcp remove ceetrix`, {
