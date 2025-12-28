@@ -1,0 +1,46 @@
+{
+  "name": "ceetrix",
+  "version": "1.0.0",
+  "description": "Set up Ceetrix backlog management for Claude Code",
+  "bin": {
+    "ceetrix": "./bin/ceetrix.js"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "lint": "eslint src tests",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@inquirer/prompts": "^7.0.0",
+    "open": "^10.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^2.0.0",
+    "why-is-node-running": "^3.2.2"
+  },
+  "files": [
+    "bin",
+    "dist"
+  ],
+  "keywords": [
+    "ceetrix",
+    "claude",
+    "claude-code",
+    "mcp",
+    "backlog"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ceetrixai/ceetrix.git"
+  }
+}
