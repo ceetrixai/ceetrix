@@ -18,6 +18,12 @@ const COMMON_CLAUDE_PATHS = [
 /** Command timeout for diagnostics */
 const DIAG_TIMEOUT_MS = 5000;
 
+/** Short timeout for version verification */
+const VERSION_CHECK_TIMEOUT_MS = 3000;
+
+/** Expected marker in Claude Code version output */
+const CLAUDE_CODE_MARKER = 'Claude Code';
+
 /**
  * Print debug diagnostics and exit.
  */
@@ -46,44 +52,43 @@ export async function printDebugInfo(): Promise<void> {
   console.log('Claude CLI Detection');
   console.log('────────────────────');
 
+  // Helper to check if path is real Claude Code
+  async function checkClaudeCode(path: string): Promise<string> {
+    try {
+      const { stdout } = await execAsync(`"${path}" --version`, {
+        timeout: VERSION_CHECK_TIMEOUT_MS,
+      });
+      if (stdout.includes(CLAUDE_CODE_MARKER)) {
+        return `✓ Claude Code (${stdout.trim()})`;
+      }
+      return `✗ NOT Claude Code (responds: ${stdout.trim().slice(0, 40)})`;
+    } catch (e) {
+      const err = e as { killed?: boolean; code?: string };
+      if (err.killed) return '✗ TIMEOUT (possibly stale install)';
+      return '✗ NOT FOUND or ERROR';
+    }
+  }
+
   // Try which
+  let whichPath: string | null = null;
   try {
-    const foundPath = await which('claude');
-    console.log(`  which('claude'):  ${foundPath}`);
+    whichPath = await which('claude');
+    const status = await checkClaudeCode(whichPath);
+    console.log(`  which('claude'):  ${whichPath}`);
+    console.log(`                    ${status}`);
   } catch {
-    console.log(`  which('claude'):  NOT FOUND`);
+    console.log(`  which('claude'):  NOT IN PATH`);
   }
 
   // Try common paths
   for (const path of COMMON_CLAUDE_PATHS) {
-    try {
-      await which(path);
-      console.log(`  ${path}:  EXISTS`);
-    } catch {
-      console.log(`  ${path}:  NOT FOUND`);
-    }
+    if (path === whichPath) continue; // Already checked
+    const status = await checkClaudeCode(path);
+    console.log(`  ${path}:`);
+    console.log(`                    ${status}`);
   }
   console.log('');
 
-  // Claude version (if found)
-  console.log('Claude CLI Version');
-  console.log('──────────────────');
-  try {
-    const { stdout } = await execAsync('claude --version', { timeout: DIAG_TIMEOUT_MS });
-    console.log(`  ${stdout.trim()}`);
-  } catch {
-    // Try with full path
-    for (const path of COMMON_CLAUDE_PATHS) {
-      try {
-        const { stdout } = await execAsync(`"${path}" --version`, { timeout: DIAG_TIMEOUT_MS });
-        console.log(`  ${stdout.trim()} (via ${path})`);
-        break;
-      } catch {
-        // Continue
-      }
-    }
-  }
-  console.log('');
 
   // Existing MCP config
   console.log('Ceetrix MCP Config');

@@ -4,6 +4,9 @@
  * Uses the `which` package for cross-platform executable detection.
  * This handles non-login shells (e.g., npx context) where PATH may not
  * include user-configured directories like /opt/homebrew/bin.
+ *
+ * Verifies found binaries are actually Claude Code (not stale npm installs)
+ * by checking --version output contains "Claude Code".
  */
 
 import { exec } from 'child_process';
@@ -16,6 +19,12 @@ const execAsync = promisify(exec);
 /** Timeout for Claude CLI commands in milliseconds */
 const CLAUDE_COMMAND_TIMEOUT_MS = 10000;
 
+/** Short timeout for version check (old versions may hang) */
+const VERSION_CHECK_TIMEOUT_MS = 3000;
+
+/** Expected string in Claude Code version output */
+const CLAUDE_CODE_VERSION_MARKER = 'Claude Code';
+
 /** Common installation paths for Claude CLI (fallback when not in PATH) */
 const COMMON_CLAUDE_PATHS = [
   '/opt/homebrew/bin/claude', // macOS Homebrew ARM
@@ -27,27 +36,46 @@ const COMMON_CLAUDE_PATHS = [
 let cachedClaudePath: string | null = null;
 
 /**
- * Find claude executable using the `which` package.
- * Falls back to common installation paths if not in PATH.
+ * Verify a path is actually Claude Code by checking version output.
+ *
+ * @param path - Path to executable
+ * @returns true if responds with "Claude Code" in version output
+ */
+async function isClaudeCode(path: string): Promise<boolean> {
+  try {
+    const { stdout } = await execAsync(`"${path}" --version`, {
+      timeout: VERSION_CHECK_TIMEOUT_MS,
+    });
+    return stdout.includes(CLAUDE_CODE_VERSION_MARKER);
+  } catch {
+    // Timeout, error, or doesn't respond correctly
+    return false;
+  }
+}
+
+/**
+ * Find claude executable by checking candidates in order.
+ * Verifies each candidate is actually Claude Code (not a stale npm install).
  *
  * @returns Full path to claude executable, or null if not found
  */
 async function findClaudePath(): Promise<string | null> {
-  // Try standard PATH lookup first
+  const candidates: string[] = [];
+
+  // Try which first
   try {
-    return await which('claude');
+    candidates.push(await which('claude'));
   } catch {
-    // Not in PATH, try common locations
+    // Not in PATH
   }
 
-  // Fallback: check common installation paths
-  for (const path of COMMON_CLAUDE_PATHS) {
-    try {
-      // which() can verify a specific path exists and is executable
-      await which(path);
+  // Add common fallback paths
+  candidates.push(...COMMON_CLAUDE_PATHS);
+
+  // Find first candidate that is actually Claude Code
+  for (const path of candidates) {
+    if (await isClaudeCode(path)) {
       return path;
-    } catch {
-      // Try next path
     }
   }
 
@@ -73,16 +101,7 @@ async function getClaudePath(): Promise<string> {
  */
 export async function checkClaudeCli(): Promise<boolean> {
   const claudePath = await getClaudePath();
-  if (!claudePath) return false;
-
-  try {
-    await execAsync(`"${claudePath}" --version`, {
-      timeout: CLAUDE_COMMAND_TIMEOUT_MS,
-    });
-    return true;
-  } catch {
-    return false;
-  }
+  return claudePath !== '';
 }
 
 /**
