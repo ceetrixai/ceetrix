@@ -9,6 +9,7 @@ import { openBrowser } from './browser.js';
 import { promptForRepo, promptExistingConfig } from './prompts.js';
 import { checkClaudeCli, addConfig } from './claude.js';
 import { getSetupUrl, AUTH_TIMEOUT_MS } from './constants.js';
+import { enforceLatestVersion } from './version-check.js';
 
 /** Supported platform for this release */
 const SUPPORTED_PLATFORM = 'darwin';
@@ -19,6 +20,9 @@ const SUPPORTED_PLATFORM = 'darwin';
 export async function main(): Promise<void> {
   console.log('\nCeetrix Setup');
   console.log('─────────────\n');
+
+  // Version check - refuse to run outdated cached versions
+  await enforceLatestVersion();
 
   // Platform check - macOS only for now
   if (process.platform !== SUPPORTED_PLATFORM) {
