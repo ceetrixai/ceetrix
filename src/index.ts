@@ -110,8 +110,14 @@ async function handleExistingConfig(): Promise<'cancel' | 'done' | 'continue'> {
       return 'done';
 
     case 'reauth':
-      // Continue with normal flow to get new API key
-      console.log('Re-authenticating...\n');
+      // Remove existing config before re-authenticating
+      console.log('Re-authenticating...');
+      try {
+        await removeExistingConfig();
+      } catch {
+        // Ignore removal errors - config may not exist
+      }
+      console.log('');
       return 'continue';
 
     case 'add-repo':
