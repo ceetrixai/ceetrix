@@ -3,11 +3,20 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { hasPermission, resetPermission } from '../src/permissions.js';
+import { hasPermission, resetPermission, requestPermissionOrExit } from '../src/permissions.js';
+
+// Mock @inquirer/prompts
+vi.mock('@inquirer/prompts', () => ({
+  confirm: vi.fn(),
+}));
+
+import { confirm } from '@inquirer/prompts';
+const mockConfirm = vi.mocked(confirm);
 
 describe('permissions', () => {
   beforeEach(() => {
     resetPermission();
+    vi.clearAllMocks();
   });
 
   afterEach(() => {
@@ -29,15 +38,56 @@ describe('permissions', () => {
 });
 
 describe('permission model', () => {
-  it('is all-or-nothing (atomic)', () => {
-    // Permission should be granted once upfront, not per-command
-    // This is a design principle test
-    expect(true).toBe(true); // Placeholder - actual behavior tested in integration
+  let mockExit: ReturnType<typeof vi.spyOn>;
+  let mockConsoleLog: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    resetPermission();
+    vi.clearAllMocks();
+    mockExit = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+    mockConsoleLog = vi.spyOn(console, 'log').mockImplementation(() => {});
   });
 
-  it('exits cleanly if denied', () => {
+  afterEach(() => {
+    resetPermission();
+    mockExit.mockRestore();
+    mockConsoleLog.mockRestore();
+  });
+
+  it('is all-or-nothing (atomic)', async () => {
+    // Permission should be granted once upfront, not per-command
+    // After granting, subsequent calls should not re-prompt
+    mockConfirm.mockResolvedValueOnce(true);
+
+    await requestPermissionOrExit();
+    expect(hasPermission()).toBe(true);
+    expect(mockConfirm).toHaveBeenCalledTimes(1);
+
+    // Second call should NOT prompt again (permission already granted)
+    await requestPermissionOrExit();
+    expect(mockConfirm).toHaveBeenCalledTimes(1); // Still 1, not 2
+    expect(hasPermission()).toBe(true);
+  });
+
+  it('exits cleanly if denied', async () => {
     // When permission is denied, process.exit(0) is called
-    // This is tested via the requestPermissionOrExit function behavior
-    expect(true).toBe(true);
+    mockConfirm.mockResolvedValueOnce(false);
+    // Make mock throw to simulate actual process.exit behavior (stops execution)
+    mockExit.mockImplementation(() => { throw new Error('process.exit called'); });
+
+    await expect(requestPermissionOrExit()).rejects.toThrow('process.exit called');
+
+    expect(mockExit).toHaveBeenCalledWith(0);
+    // Permission should NOT be granted since exit was called before setting it
+    expect(hasPermission()).toBe(false);
+  });
+
+  it('grants permission when user confirms', async () => {
+    mockConfirm.mockResolvedValueOnce(true);
+
+    await requestPermissionOrExit();
+
+    expect(mockExit).not.toHaveBeenCalled();
+    expect(hasPermission()).toBe(true);
   });
 });
