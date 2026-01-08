@@ -27,6 +27,9 @@ const VERSION_CHECK_TIMEOUT_MS = 3000;
 /** Expected marker in Claude Code version output */
 const CLAUDE_CODE_MARKER = 'Claude Code';
 
+/** Minimum required Claude CLI version */
+const MIN_VERSION = { major: 2, minor: 0 };
+
 /**
  * Print debug diagnostics and exit.
  */
@@ -54,6 +57,21 @@ export async function printDebugInfo(): Promise<void> {
   // Claude CLI detection
   console.log('Claude CLI Detection');
   console.log('────────────────────');
+  console.log(`  Min required:     v${MIN_VERSION.major}.${MIN_VERSION.minor} (for HTTP transport)`);
+
+  // Helper to parse version string
+  function parseVersion(versionOutput: string): { major: number; minor: number } | null {
+    const match = versionOutput.match(/^(\d+)\.(\d+)\./);
+    if (!match) return null;
+    return { major: parseInt(match[1], 10), minor: parseInt(match[2], 10) };
+  }
+
+  // Helper to check if version meets minimum
+  function meetsMinVersion(v: { major: number; minor: number }): boolean {
+    if (v.major > MIN_VERSION.major) return true;
+    if (v.major < MIN_VERSION.major) return false;
+    return v.minor >= MIN_VERSION.minor;
+  }
 
   // Helper to check if path is real Claude Code
   async function checkClaudeCode(path: string): Promise<string> {
@@ -62,6 +80,12 @@ export async function printDebugInfo(): Promise<void> {
         timeout: VERSION_CHECK_TIMEOUT_MS,
       });
       if (stdout.includes(CLAUDE_CODE_MARKER)) {
+        const version = parseVersion(stdout);
+        if (version && meetsMinVersion(version)) {
+          return `✓ Claude Code v${version.major}.${version.minor} (meets min)`;
+        } else if (version) {
+          return `✗ Claude Code v${version.major}.${version.minor} (BELOW MIN - update required)`;
+        }
         return `✓ Claude Code (${stdout.trim()})`;
       }
       return `✗ NOT Claude Code (responds: ${stdout.trim().slice(0, 40)})`;

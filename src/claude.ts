@@ -13,6 +13,7 @@
 
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { writeFile } from 'fs/promises';
 import which from 'which';
 import { getMcpServerUrl } from './constants.js';
 
@@ -27,6 +28,9 @@ const VERSION_CHECK_TIMEOUT_MS = 3000;
 /** Expected string in Claude Code version output */
 const CLAUDE_CODE_VERSION_MARKER = 'Claude Code';
 
+/** Minimum required Claude CLI version (2.0 supports http transport) */
+const MIN_CLAUDE_VERSION = { major: 2, minor: 0 };
+
 /** Common installation paths for Claude CLI (fallback when not in PATH) */
 const COMMON_CLAUDE_PATHS = [
   '/opt/homebrew/bin/claude', // macOS Homebrew ARM
@@ -38,17 +42,59 @@ const COMMON_CLAUDE_PATHS = [
 let cachedClaudePath: string | null = null;
 
 /**
- * Verify a path is actually Claude Code by checking version output.
+ * Parse version string like "2.0.76 (Claude Code)" into major/minor numbers.
+ *
+ * @param versionOutput - Output from claude --version
+ * @returns Object with major and minor version, or null if parsing fails
+ */
+function parseClaudeVersion(
+  versionOutput: string
+): { major: number; minor: number } | null {
+  // Match patterns like "2.0.76" or "0.2.126"
+  const match = versionOutput.match(/^(\d+)\.(\d+)\./);
+  if (!match) return null;
+  return {
+    major: parseInt(match[1], 10),
+    minor: parseInt(match[2], 10),
+  };
+}
+
+/**
+ * Check if version meets minimum requirements.
+ *
+ * @param version - Parsed version object
+ * @returns true if version >= MIN_CLAUDE_VERSION
+ */
+function meetsMinVersion(version: { major: number; minor: number }): boolean {
+  if (version.major > MIN_CLAUDE_VERSION.major) return true;
+  if (version.major < MIN_CLAUDE_VERSION.major) return false;
+  return version.minor >= MIN_CLAUDE_VERSION.minor;
+}
+
+/**
+ * Verify a path is actually Claude Code with sufficient version.
  *
  * @param path - Path to executable
- * @returns true if responds with "Claude Code" in version output
+ * @returns true if responds with "Claude Code" and version >= 2.0
  */
 async function isClaudeCode(path: string): Promise<boolean> {
   try {
     const { stdout } = await execAsync(`"${path}" --version`, {
       timeout: VERSION_CHECK_TIMEOUT_MS,
     });
-    return stdout.includes(CLAUDE_CODE_VERSION_MARKER);
+
+    // Must be Claude Code
+    if (!stdout.includes(CLAUDE_CODE_VERSION_MARKER)) {
+      return false;
+    }
+
+    // Must meet minimum version
+    const version = parseClaudeVersion(stdout);
+    if (!version || !meetsMinVersion(version)) {
+      return false;
+    }
+
+    return true;
   } catch {
     // Timeout, error, or doesn't respond correctly
     return false;
@@ -109,8 +155,7 @@ export async function checkClaudeCli(): Promise<boolean> {
 /**
  * Add Ceetrix MCP server configuration to Claude Code.
  *
- * Uses `claude mcp add` with --transport sse for compatibility with older CLI versions.
- * Older Claude CLI (< 2.x) only supports stdio and sse, not http.
+ * Uses `claude mcp add` with --transport http. Requires Claude CLI >= 2.0.
  *
  * @param apiKey - The API key to use for authentication
  * @throws Error if Claude CLI not found or command fails
@@ -118,15 +163,17 @@ export async function checkClaudeCli(): Promise<boolean> {
 export async function addConfig(apiKey: string): Promise<void> {
   const claudePath = await getClaudePath();
   if (!claudePath) {
-    throw new Error('Claude CLI not found');
+    throw new Error(
+      'Claude CLI not found or version too old. Requires Claude Code >= 2.0. ' +
+        'Install/update: https://docs.anthropic.com/en/docs/claude-code'
+    );
   }
 
   const url = getMcpServerUrl();
 
-  // Use claude mcp add with sse transport for compatibility
-  // Older CLI versions (< 2.x) don't support --transport http
+  // Use http transport (requires Claude CLI >= 2.0)
   await execAsync(
-    `"${claudePath}" mcp add --transport sse -H "X-API-Key: ${apiKey}" --scope user ceetrix "${url}"`,
+    `"${claudePath}" mcp add --transport http -H "X-API-Key: ${apiKey}" --scope user ceetrix "${url}"`,
     {
       timeout: CLAUDE_COMMAND_TIMEOUT_MS,
     }
@@ -167,3 +214,34 @@ export async function removeConfig(): Promise<void> {
     timeout: CLAUDE_COMMAND_TIMEOUT_MS,
   });
 }
+
+/**
+ * Write Ceetrix MCP config directly to a file.
+ *
+ * This bypasses `claude mcp add` and writes the config JSON directly,
+ * allowing tests to use a custom config file without touching ~/.claude.json.
+ *
+ * @param apiKey - The API key for authentication
+ * @param url - The MCP server URL
+ * @param filePath - Path to write the config file
+ */
+export async function writeConfigToFile(
+  apiKey: string,
+  url: string,
+  filePath: string
+): Promise<void> {
+  const config = {
+    mcpServers: {
+      ceetrix: {
+        type: 'http',
+        url: url,
+        headers: {
+          'X-API-Key': apiKey,
+        },
+      },
+    },
+  };
+
+  await writeFile(filePath, JSON.stringify(config, null, 2), 'utf-8');
+}
+

@@ -13,7 +13,7 @@ vi.mock('which', () => ({
 
 // Mock constants
 vi.mock('../src/constants.js', () => ({
-  getMcpServerUrl: () => 'https://api.ceetrix.com/sse',
+  getMcpServerUrl: () => 'https://api.ceetrix.com/mcp',
 }));
 
 const mockExec = vi.mocked(exec);
@@ -90,6 +90,25 @@ describe('checkClaudeCli', () => {
 
     expect(result).toBe(false);
   });
+
+  it('returns false when Claude Code version is below minimum (0.2.x)', async () => {
+    // Old npm-installed versions are 0.2.x which don't support http transport
+    setupMocks('0.2.126 (Claude Code)', '');
+
+    const { checkClaudeCli } = await import('../src/claude.js');
+    const result = await checkClaudeCli();
+
+    expect(result).toBe(false);
+  });
+
+  it('returns true when Claude Code version meets minimum (2.x)', async () => {
+    setupMocks('2.1.1 (Claude Code)', '');
+
+    const { checkClaudeCli } = await import('../src/claude.js');
+    const result = await checkClaudeCli();
+
+    expect(result).toBe(true);
+  });
 });
 
 describe('addConfig', () => {
@@ -98,23 +117,23 @@ describe('addConfig', () => {
     vi.resetModules();
   });
 
-  it('calls claude mcp add with correct transport and headers', async () => {
+  it('calls claude mcp add with http transport and headers', async () => {
     setupMocks('2.0.76 (Claude Code)', '');
 
     const { addConfig } = await import('../src/claude.js');
     await addConfig('test_api_key');
 
-    // Should have called exec with mcp add command (not add-json)
+    // Should have called exec with mcp add command
     const calls = mockExec.mock.calls;
     const addCall = calls.find(c => String(c[0]).includes('mcp add '));
 
     expect(addCall).toBeDefined();
     const cmd = String(addCall![0]);
-    expect(cmd).toContain('--transport sse');
+    expect(cmd).toContain('--transport http');
     expect(cmd).toContain('-H "X-API-Key: test_api_key"');
     expect(cmd).toContain('--scope user');
     expect(cmd).toContain('ceetrix');
-    expect(cmd).toContain('https://api.ceetrix.com/sse');
+    expect(cmd).toContain('https://api.ceetrix.com/mcp');
   });
 
   it('throws when claude is not found', async () => {

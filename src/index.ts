@@ -7,10 +7,34 @@ import { checkExistingConfig, removeExistingConfig } from './config.js';
 import { startCallbackServer } from './server.js';
 import { openBrowser } from './browser.js';
 import { promptForRepo, promptExistingConfig } from './prompts.js';
-import { checkClaudeCli, addConfig } from './claude.js';
-import { getSetupUrl, AUTH_TIMEOUT_MS } from './constants.js';
+import { checkClaudeCli, addConfig, writeConfigToFile } from './claude.js';
+import { getSetupUrl, AUTH_TIMEOUT_MS, getMcpServerUrl } from './constants.js';
+import { printDebugInfo } from './debug.js';
 import { enforceLatestVersion } from './version-check.js';
 import { requestPermissionOrExit } from './permissions.js';
+
+/** CLI context for debug/diagnostics */
+interface CliContext {
+  debug: boolean;
+  configPath: string | null;
+}
+
+/** Parse command line arguments */
+function parseArgs(): CliContext {
+  const args = process.argv.slice(2);
+
+  // Parse --config <path>
+  let configPath: string | null = null;
+  const configIndex = args.findIndex(arg => arg === '--config' || arg === '-c');
+  if (configIndex !== -1 && args[configIndex + 1]) {
+    configPath = args[configIndex + 1];
+  }
+
+  return {
+    debug: args.includes('--debug') || args.includes('-d'),
+    configPath,
+  };
+}
 
 /** Supported platform for this release */
 const SUPPORTED_PLATFORM = 'darwin';
@@ -19,6 +43,14 @@ const SUPPORTED_PLATFORM = 'darwin';
  * Main CLI entry point
  */
 export async function main(): Promise<void> {
+  const cliContext = parseArgs();
+
+  // Handle --debug flag
+  if (cliContext.debug) {
+    await printDebugInfo();
+    return;
+  }
+
   console.log('\nCeetrix Setup');
   console.log('─────────────\n');
 
@@ -35,28 +67,35 @@ export async function main(): Promise<void> {
     process.exit(1);
   }
 
-  // Single upfront permission for all CLI operations
-  await requestPermissionOrExit();
-
-  // Check Claude CLI is available
-  const claudeAvailable = await checkClaudeCli();
-  if (!claudeAvailable) {
-    console.error('✗ Claude Code CLI not found\n');
-    console.error('Install Claude Code first: https://claude.ai/download');
-    console.error('');
-    console.error('If Claude Code is installed, run: npx ceetrix --debug');
-    console.error('and post the output to: https://ceetrix.com/discord\n');
-    process.exit(1);
+  // Single upfront permission for all CLI operations (skip if using custom config)
+  if (!cliContext.configPath) {
+    await requestPermissionOrExit();
   }
 
-  // Check if already configured
-  const existingConfig = await checkExistingConfig();
-  if (existingConfig) {
-    const action = await handleExistingConfig();
-    if (action === 'cancel' || action === 'done') {
-      return;
+  // Check Claude CLI is available (skip if using custom config - we write directly)
+  if (!cliContext.configPath) {
+    const claudeAvailable = await checkClaudeCli();
+    if (!claudeAvailable) {
+      console.error('✗ Claude Code CLI not found or version too old\n');
+      console.error('Ceetrix requires Claude Code version 2.0 or later.');
+      console.error('Install/update: https://docs.anthropic.com/en/docs/claude-code');
+      console.error('');
+      console.error('Run: npx ceetrix --debug');
+      console.error('for diagnostic info to share at: https://ceetrix.com/discord\n');
+      process.exit(1);
     }
-    // For 'continue', proceed with normal flow
+
+    // Check if already configured (only when writing to default location)
+    const existingConfig = await checkExistingConfig();
+    if (existingConfig) {
+      const action = await handleExistingConfig();
+      if (action === 'cancel' || action === 'done') {
+        return;
+      }
+      // For 'continue', proceed with normal flow
+    }
+  } else {
+    console.log(`Writing config to: ${cliContext.configPath}\n`);
   }
 
   // Detect or prompt for repo
@@ -83,7 +122,7 @@ export async function main(): Promise<void> {
   }
 
   // Run the setup flow
-  await runSetupFlow(repo);
+  await runSetupFlow(repo, cliContext.configPath);
 }
 
 /**
@@ -134,8 +173,9 @@ async function handleExistingConfig(): Promise<'cancel' | 'done' | 'continue'> {
  * Run the OAuth setup flow.
  *
  * @param repo - The repository to set up (owner/repo)
+ * @param configPath - Optional custom config file path (null = use claude mcp add)
  */
-async function runSetupFlow(repo: string): Promise<void> {
+async function runSetupFlow(repo: string, configPath: string | null): Promise<void> {
   // Start callback server
   const { port, waitForCallback, close } = await startCallbackServer();
 
@@ -180,12 +220,19 @@ async function runSetupFlow(repo: string): Promise<void> {
     }
 
     // Add to Claude config
-    console.log('Adding Ceetrix to Claude Code...');
-    await addConfig(result.apiKey);
-    console.log('✓ Configuration added\n');
-
-    // Show restart notice
-    printRestartNotice();
+    if (configPath) {
+      // Write directly to custom config file (non-destructive to ~/.claude.json)
+      console.log(`Writing Ceetrix config to ${configPath}...`);
+      await writeConfigToFile(result.apiKey, getMcpServerUrl(), configPath);
+      console.log('✓ Configuration written\n');
+      printCustomConfigNotice(configPath);
+    } else {
+      // Use claude mcp add (writes to ~/.claude.json)
+      console.log('Adding Ceetrix to Claude Code...');
+      await addConfig(result.apiKey);
+      console.log('✓ Configuration added\n');
+      printRestartNotice();
+    }
   } finally {
     close();
   }
@@ -226,5 +273,19 @@ function printRestartNotice(): void {
   console.log('│  Claude Code does not auto-detect new MCP servers.               │');
   console.log('│  Quit and reopen Claude Code, then describe a feature you        │');
   console.log('│  want to build and ask Claude to "create a story for it".        │');
+  console.log('└─────────────────────────────────────────────────────────────────┘\n');
+}
+
+/**
+ * Print notice for custom config file usage.
+ */
+function printCustomConfigNotice(configPath: string): void {
+  console.log('┌─────────────────────────────────────────────────────────────────┐');
+  console.log('│  Config written to custom file (not ~/.claude.json)             │');
+  console.log('│                                                                  │');
+  console.log('│  To use this config with Claude:                                 │');
+  console.log(`│    claude --mcp-config ${configPath}`);
+  console.log('│                                                                  │');
+  console.log('│  Your production ~/.claude.json was NOT modified.               │');
   console.log('└─────────────────────────────────────────────────────────────────┘\n');
 }
