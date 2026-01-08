@@ -24,7 +24,7 @@ export const DEFAULT_PORT = 54321;
 /** Ports to try for callback server if default is in use */
 export const PORT_RANGE = [54321, 54322, 54323, 54324, 54325];
 
-/** MCP server URL for Claude Code config (HTTP transport) */
+/** MCP server URL for Claude Code config (SSE transport for compatibility) */
 export function getMcpServerUrl(): string {
-  return process.env.CEETRIX_MCP_URL || 'https://api.ceetrix.com/mcp';
+  return process.env.CEETRIX_MCP_URL || 'https://api.ceetrix.com/sse';
 }

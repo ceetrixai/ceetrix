@@ -13,7 +13,7 @@ vi.mock('which', () => ({
 
 // Mock constants
 vi.mock('../src/constants.js', () => ({
-  getMcpServerUrl: () => 'https://api.ceetrix.com/mcp',
+  getMcpServerUrl: () => 'https://api.ceetrix.com/sse',
 }));
 
 const mockExec = vi.mocked(exec);
@@ -110,11 +110,11 @@ describe('addConfig', () => {
 
     expect(addCall).toBeDefined();
     const cmd = String(addCall![0]);
-    expect(cmd).toContain('--transport http');
+    expect(cmd).toContain('--transport sse');
     expect(cmd).toContain('-H "X-API-Key: test_api_key"');
     expect(cmd).toContain('--scope user');
     expect(cmd).toContain('ceetrix');
-    expect(cmd).toContain('https://api.ceetrix.com/mcp');
+    expect(cmd).toContain('https://api.ceetrix.com/sse');
   });
 
   it('throws when claude is not found', async () => {
