@@ -1,6 +1,6 @@
 {
   "name": "ceetrix",
-  "version": "1.0.12",
+  "version": "1.0.13",
   "description": "Set up Ceetrix backlog management for Claude Code",
   "bin": {
     "ceetrix": "./bin/ceetrix.js"
