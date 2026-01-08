@@ -8,7 +8,7 @@ import { getMcpServerUrl, getSetupUrl, AUTH_TIMEOUT_MS, PORT_RANGE, DEFAULT_PORT
 describe('getMcpServerUrl', () => {
   it('returns production URL by default', () => {
     const url = getMcpServerUrl();
-    expect(url).toBe('https://api.ceetrix.com/sse');
+    expect(url).toBe('https://api.ceetrix.com/mcp');
   });
 
   it('URL uses HTTPS', () => {
@@ -16,9 +16,9 @@ describe('getMcpServerUrl', () => {
     expect(url.startsWith('https://')).toBe(true);
   });
 
-  it('URL ends with /sse (Streamable HTTP transport)', () => {
+  it('URL ends with /mcp (HTTP transport)', () => {
     const url = getMcpServerUrl();
-    expect(url.endsWith('/sse')).toBe(true);
+    expect(url.endsWith('/mcp')).toBe(true);
   });
 });
 

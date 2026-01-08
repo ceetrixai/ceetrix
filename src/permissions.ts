@@ -15,7 +15,7 @@ const COMMANDS_DESCRIPTION = `
 • which claude          (find Claude CLI location)
 • claude --version      (verify it's Claude Code)
 • claude mcp list       (check existing config)
-• claude mcp add-json   (add Ceetrix server)
+• claude mcp add        (add Ceetrix server)
 • claude mcp remove     (if reconfiguring)
 `;
 

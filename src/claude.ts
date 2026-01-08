@@ -109,6 +109,9 @@ export async function checkClaudeCli(): Promise<boolean> {
 /**
  * Add Ceetrix MCP server configuration to Claude Code.
  *
+ * Uses `claude mcp add` with --transport http and -H for headers.
+ * The add-json command only supports stdio/sse schemas.
+ *
  * @param apiKey - The API key to use for authentication
  * @throws Error if Claude CLI not found or command fails
  */
@@ -118,20 +121,16 @@ export async function addConfig(apiKey: string): Promise<void> {
     throw new Error('Claude CLI not found');
   }
 
-  const config = {
-    type: 'http',
-    url: getMcpServerUrl(),
-    headers: {
-      'X-API-Key': apiKey,
-    },
-  };
+  const url = getMcpServerUrl();
 
-  const configJson = JSON.stringify(config);
-  const escaped = configJson.replace(/'/g, "'\\''");
-
-  await execAsync(`"${claudePath}" mcp add-json ceetrix '${escaped}' --scope user`, {
-    timeout: CLAUDE_COMMAND_TIMEOUT_MS,
-  });
+  // Use claude mcp add with transport flag and header
+  // Format: claude mcp add --transport http -H "X-API-Key: <key>" --scope user <name> <url>
+  await execAsync(
+    `"${claudePath}" mcp add --transport http -H "X-API-Key: ${apiKey}" --scope user ceetrix "${url}"`,
+    {
+      timeout: CLAUDE_COMMAND_TIMEOUT_MS,
+    }
+  );
 }
 
 /**

@@ -13,7 +13,7 @@ vi.mock('which', () => ({
 
 // Mock constants
 vi.mock('../src/constants.js', () => ({
-  getMcpServerUrl: () => 'https://api.ceetrix.com/sse',
+  getMcpServerUrl: () => 'https://api.ceetrix.com/mcp',
 }));
 
 const mockExec = vi.mocked(exec);
@@ -98,19 +98,23 @@ describe('addConfig', () => {
     vi.resetModules();
   });
 
-  it('calls claude mcp add-json with correct config', async () => {
+  it('calls claude mcp add with correct transport and headers', async () => {
     setupMocks('2.0.76 (Claude Code)', '');
 
     const { addConfig } = await import('../src/claude.js');
     await addConfig('test_api_key');
 
-    // Should have called exec with mcp add-json command
+    // Should have called exec with mcp add command (not add-json)
     const calls = mockExec.mock.calls;
-    const addJsonCall = calls.find(c => String(c[0]).includes('mcp add-json'));
+    const addCall = calls.find(c => String(c[0]).includes('mcp add '));
 
-    expect(addJsonCall).toBeDefined();
-    expect(String(addJsonCall![0])).toContain('ceetrix');
-    expect(String(addJsonCall![0])).toContain('test_api_key');
+    expect(addCall).toBeDefined();
+    const cmd = String(addCall![0]);
+    expect(cmd).toContain('--transport http');
+    expect(cmd).toContain('-H "X-API-Key: test_api_key"');
+    expect(cmd).toContain('--scope user');
+    expect(cmd).toContain('ceetrix');
+    expect(cmd).toContain('https://api.ceetrix.com/mcp');
   });
 
   it('throws when claude is not found', async () => {
@@ -128,7 +132,7 @@ describe('checkExistingConfig', () => {
   });
 
   it('returns true when ceetrix is in mcp list', async () => {
-    setupMocks('2.0.76 (Claude Code)', 'ceetrix: https://api.ceetrix.com/sse');
+    setupMocks('2.0.76 (Claude Code)', 'ceetrix: https://api.ceetrix.com/mcp');
 
     const { checkExistingConfig } = await import('../src/claude.js');
     const result = await checkExistingConfig();
