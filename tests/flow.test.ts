@@ -146,6 +146,57 @@ describe('main flow', () => {
     expect(mockPromptForRepo).toHaveBeenCalled();
   });
 
+  it('falls back to manual entry when git detection throws error', async () => {
+    mockCheckClaudeCli.mockResolvedValue(true);
+    mockCheckExistingConfig.mockResolvedValue(false);
+    // Simulate git command failure (e.g., git not installed)
+    mockDetectGitRemote.mockRejectedValue(new Error('git: command not found'));
+    mockPromptForRepo.mockResolvedValue('manual/fallback');
+    mockStartCallbackServer.mockResolvedValue({
+      port: 54321,
+      waitForCallback: () =>
+        Promise.resolve({
+          apiKey: 'test_key',
+          username: 'testuser',
+          repos: ['manual/fallback'],
+        }),
+      close: closeServer,
+    });
+    mockOpenBrowser.mockResolvedValue(true);
+    mockAddConfig.mockResolvedValue(undefined);
+
+    await main();
+
+    // Should fall back to manual entry, not crash
+    expect(mockPromptForRepo).toHaveBeenCalled();
+    expect(mockAddConfig).toHaveBeenCalled();
+  });
+
+  it('falls back to manual entry when git returns unparseable output', async () => {
+    mockCheckClaudeCli.mockResolvedValue(true);
+    mockCheckExistingConfig.mockResolvedValue(false);
+    // Simulate corrupt git config or unusual remote format
+    mockDetectGitRemote.mockResolvedValue({ status: 'no-remote' });
+    mockPromptForRepo.mockResolvedValue('manual/entered');
+    mockStartCallbackServer.mockResolvedValue({
+      port: 54321,
+      waitForCallback: () =>
+        Promise.resolve({
+          apiKey: 'test_key',
+          username: 'testuser',
+          repos: ['manual/entered'],
+        }),
+      close: closeServer,
+    });
+    mockOpenBrowser.mockResolvedValue(true);
+    mockAddConfig.mockResolvedValue(undefined);
+
+    await main();
+
+    // Should prompt for manual entry when remote can't be parsed
+    expect(mockPromptForRepo).toHaveBeenCalled();
+  });
+
   it('shows URL when browser fails to open', async () => {
     mockCheckClaudeCli.mockResolvedValue(true);
     mockCheckExistingConfig.mockResolvedValue(false);
