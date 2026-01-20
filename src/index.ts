@@ -12,6 +12,7 @@ import { getSetupUrl, AUTH_TIMEOUT_MS, getMcpServerUrl } from './constants.js';
 import { printDebugInfo } from './debug.js';
 import { enforceLatestVersion } from './version-check.js';
 import { requestPermissionOrExit } from './permissions.js';
+import { runInviteFlow } from './invite.js';
 
 /** CLI context for debug/diagnostics */
 interface CliContext {
@@ -56,6 +57,9 @@ export async function main(): Promise<void> {
 
   // Version check - refuse to run outdated cached versions
   await enforceLatestVersion();
+
+  // Invite code check - gate access before setup
+  await runInviteFlow();
 
   // Platform check - macOS only for now
   if (process.platform !== SUPPORTED_PLATFORM) {
