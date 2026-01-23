@@ -45,6 +45,11 @@ vi.mock('../src/version-check.js', () => ({
   enforceLatestVersion: vi.fn().mockResolvedValue(undefined),
 }));
 
+// Mock invite flow - skip in tests
+vi.mock('../src/invite.js', () => ({
+  runInviteFlow: vi.fn().mockResolvedValue(undefined),
+}));
+
 import { main } from '../src/index.js';
 import { detectGitRemote } from '../src/git.js';
 import { checkExistingConfig } from '../src/config.js';

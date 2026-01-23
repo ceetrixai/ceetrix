@@ -103,7 +103,13 @@ export async function main(): Promise<void> {
   }
 
   // Detect or prompt for repo
-  const detection = await detectGitRemote();
+  let detection: GitDetectionResult;
+  try {
+    detection = await detectGitRemote();
+  } catch {
+    // Git detection failed (e.g., git not installed) - fall back to prompt
+    detection = { status: 'no-git-repo' };
+  }
   let repo: string;
 
   if (detection.status === 'detected') {

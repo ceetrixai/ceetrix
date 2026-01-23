@@ -9,6 +9,10 @@ vi.mock('../src/version-check.js', () => ({
   enforceLatestVersion: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock('../src/invite.js', () => ({
+  runInviteFlow: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock('../src/permissions.js', () => ({
   requestPermissionOrExit: vi.fn().mockResolvedValue(undefined),
 }));
