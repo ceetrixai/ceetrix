@@ -76,6 +76,7 @@ function handleRequest(
   const username = url.searchParams.get('username');
   const reposParam = url.searchParams.get('repos');
   const repos = reposParam ? reposParam.split(',').filter(Boolean) : [];
+  const webAppUrl = url.searchParams.get('web_app_url');
 
   if (!apiKey || !username) {
     res.writeHead(400, { 'Content-Type': 'text/plain' });
@@ -83,21 +84,40 @@ function handleRequest(
     return;
   }
 
-  // Return success page
+  // Return success page with optional redirect to web app
   res.writeHead(200, { 'Content-Type': 'text/html' });
-  res.end(getSuccessHtml());
+  res.end(getSuccessHtml(webAppUrl || undefined));
 
   resolveCallback({ apiKey, username, repos });
 }
 
+/** Delay before redirecting to web app (ms) */
+const REDIRECT_DELAY_MS = 1500;
+
 /**
  * HTML page shown in browser after successful callback.
+ * If webAppUrl is provided, includes a JS redirect after a short delay.
+ *
+ * @param webAppUrl - Optional URL to redirect to after showing success message
  */
-function getSuccessHtml(): string {
+export function getSuccessHtml(webAppUrl?: string): string {
+  const redirectScript = webAppUrl
+    ? `<script>setTimeout(function() { window.location.href = '${webAppUrl}'; }, ${REDIRECT_DELAY_MS});</script>`
+    : '';
+
+  const message = webAppUrl
+    ? 'Redirecting to Ceetrix...'
+    : 'Return to your terminal.';
+
+  const subMessage = webAppUrl
+    ? 'You can also return to your terminal.'
+    : 'You can close this tab.';
+
   return `<!DOCTYPE html>
 <html>
 <head>
   <title>Ceetrix Setup</title>
+  ${redirectScript}
   <style>
     body {
       font-family: system-ui, -apple-system, sans-serif;
@@ -120,8 +140,8 @@ function getSuccessHtml(): string {
 <body>
   <div class="container">
     <h1>Setup complete!</h1>
-    <p>Return to your terminal.</p>
-    <p style="color: #999;">You can close this tab.</p>
+    <p>${message}</p>
+    <p style="color: #999;">${subMessage}</p>
   </div>
 </body>
 </html>`;
