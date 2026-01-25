@@ -42,9 +42,11 @@ describe('Claude Code version marker', () => {
 
 describe('common Claude paths', () => {
   const COMMON_CLAUDE_PATHS = [
-    '/opt/homebrew/bin/claude',
-    '/usr/local/bin/claude',
-    `${process.env.HOME}/.local/bin/claude`,
+    '/opt/homebrew/bin/claude', // macOS Homebrew ARM
+    '/usr/local/bin/claude', // macOS Homebrew Intel / Linux
+    '/usr/bin/claude', // Linux system package
+    '/snap/bin/claude', // Linux Snap package
+    `${process.env.HOME}/.local/bin/claude`, // pip/pipx style installs
   ];
 
   it('includes Homebrew ARM path', () => {
@@ -59,8 +61,16 @@ describe('common Claude paths', () => {
     expect(COMMON_CLAUDE_PATHS).toContain(`${process.env.HOME}/.local/bin/claude`);
   });
 
-  it('has exactly 3 fallback paths', () => {
-    expect(COMMON_CLAUDE_PATHS).toHaveLength(3);
+  it('includes Linux system package path', () => {
+    expect(COMMON_CLAUDE_PATHS).toContain('/usr/bin/claude');
+  });
+
+  it('includes Linux Snap path', () => {
+    expect(COMMON_CLAUDE_PATHS).toContain('/snap/bin/claude');
+  });
+
+  it('has exactly 5 fallback paths', () => {
+    expect(COMMON_CLAUDE_PATHS).toHaveLength(5);
   });
 });
 

@@ -35,6 +35,8 @@ const MIN_CLAUDE_VERSION = { major: 2, minor: 0 };
 const COMMON_CLAUDE_PATHS = [
   '/opt/homebrew/bin/claude', // macOS Homebrew ARM
   '/usr/local/bin/claude', // macOS Homebrew Intel / Linux
+  '/usr/bin/claude', // Linux system package
+  '/snap/bin/claude', // Linux Snap package
   `${process.env.HOME}/.local/bin/claude`, // pip/pipx style installs
 ];
 

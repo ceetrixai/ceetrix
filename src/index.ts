@@ -37,8 +37,8 @@ function parseArgs(): CliContext {
   };
 }
 
-/** Supported platform for this release */
-const SUPPORTED_PLATFORM = 'darwin';
+/** Supported platforms for this release */
+const SUPPORTED_PLATFORMS = ['darwin', 'linux'];
 
 /**
  * Main CLI entry point
@@ -61,11 +61,11 @@ export async function main(): Promise<void> {
   // Invite code check - gate access before setup
   await runInviteFlow();
 
-  // Platform check - macOS only for now
-  if (process.platform !== SUPPORTED_PLATFORM) {
+  // Platform check - macOS and Linux only
+  if (!SUPPORTED_PLATFORMS.includes(process.platform)) {
     console.error(`✗ Unsupported platform: ${process.platform}\n`);
-    console.error('Ceetrix currently supports macOS + Claude Code only.');
-    console.error('Windows and Linux support coming soon.');
+    console.error('Ceetrix currently supports macOS and Linux + Claude Code only.');
+    console.error('Windows support coming soon.');
     console.error('');
     console.error('Join the Discord for updates: https://ceetrix.com/discord\n');
     process.exit(1);

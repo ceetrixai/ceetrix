@@ -77,18 +77,6 @@ describe('platform checks', () => {
       );
     });
 
-    it('exits on linux', async () => {
-      Object.defineProperty(process, 'platform', { value: 'linux' });
-
-      const { main } = await import('../src/index.js');
-      await main();
-
-      expect(mockExit).toHaveBeenCalledWith(1);
-      expect(mockConsoleError).toHaveBeenCalledWith(
-        expect.stringContaining('Unsupported platform: linux')
-      );
-    });
-
     it('exits on freebsd', async () => {
       Object.defineProperty(process, 'platform', { value: 'freebsd' });
 
@@ -99,9 +87,27 @@ describe('platform checks', () => {
     });
   });
 
-  describe('supported platform proceeds', () => {
+  describe('supported platforms proceed', () => {
     it('does not exit on darwin', async () => {
       Object.defineProperty(process, 'platform', { value: 'darwin' });
+
+      const { main } = await import('../src/index.js');
+      await main();
+
+      // Should not have exited with platform error
+      const platformExitCall = mockExit.mock.calls.find(
+        call => call[0] === 1
+      );
+      // If it exited, check it wasn't for platform reasons
+      if (platformExitCall) {
+        expect(mockConsoleError).not.toHaveBeenCalledWith(
+          expect.stringContaining('Unsupported platform')
+        );
+      }
+    });
+
+    it('does not exit on linux', async () => {
+      Object.defineProperty(process, 'platform', { value: 'linux' });
 
       const { main } = await import('../src/index.js');
       await main();
@@ -127,9 +133,10 @@ describe('platform error messages', () => {
     expect(errorMessage).toContain('win32');
   });
 
-  it('error message mentions macOS + Claude Code only', () => {
-    const message = 'Ceetrix currently supports macOS + Claude Code only.';
+  it('error message mentions macOS and Linux + Claude Code only', () => {
+    const message = 'Ceetrix currently supports macOS and Linux + Claude Code only.';
     expect(message).toContain('macOS');
+    expect(message).toContain('Linux');
     expect(message).toContain('Claude Code');
   });
 
@@ -138,8 +145,9 @@ describe('platform error messages', () => {
     expect(message).toContain('https://ceetrix.com/discord');
   });
 
-  it('SUPPORTED_PLATFORM constant is darwin', () => {
-    const SUPPORTED_PLATFORM = 'darwin';
-    expect(SUPPORTED_PLATFORM).toBe('darwin');
+  it('SUPPORTED_PLATFORMS includes darwin and linux', () => {
+    const SUPPORTED_PLATFORMS = ['darwin', 'linux'];
+    expect(SUPPORTED_PLATFORMS).toContain('darwin');
+    expect(SUPPORTED_PLATFORMS).toContain('linux');
   });
 });

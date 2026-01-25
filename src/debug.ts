@@ -13,9 +13,11 @@ const execAsync = promisify(exec);
 
 /** Common installation paths for Claude CLI */
 const COMMON_CLAUDE_PATHS = [
-  '/opt/homebrew/bin/claude',
-  '/usr/local/bin/claude',
-  `${process.env.HOME}/.local/bin/claude`,
+  '/opt/homebrew/bin/claude', // macOS Homebrew ARM
+  '/usr/local/bin/claude', // macOS Homebrew Intel / Linux
+  '/usr/bin/claude', // Linux system package
+  '/snap/bin/claude', // Linux Snap package
+  `${process.env.HOME}/.local/bin/claude`, // pip/pipx style installs
 ];
 
 /** Command timeout for diagnostics */
@@ -145,10 +147,9 @@ export async function printDebugInfo(): Promise<void> {
   console.log('');
 
   console.log('─────────────────────────────────────────────────────');
-  console.log('Ceetrix currently supports macOS + Claude Code only.');
+  console.log('Ceetrix supports macOS and Linux + Claude Code.');
   console.log('');
-  console.log('If you have this combination and still have issues,');
-  console.log('copy the above and post to the Ceetrix Discord:');
-  console.log('https://ceetrix.com/discord');
+  console.log('If you have issues, copy the above and post to the');
+  console.log('Ceetrix Discord: https://ceetrix.com/discord');
   console.log('');
 }
