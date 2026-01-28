@@ -8,7 +8,7 @@ import { startCallbackServer } from './server.js';
 import { openBrowser } from './browser.js';
 import { promptForRepo, promptExistingConfig } from './prompts.js';
 import { checkClaudeCli, addConfig, writeConfigToFile } from './claude.js';
-import { getSetupUrl, AUTH_TIMEOUT_MS, getMcpServerUrl } from './constants.js';
+import { getSetupUrl, AUTH_TIMEOUT_MS, getMcpServerUrl, isCustomApiUrl, getAutoConfigPath } from './constants.js';
 import { printDebugInfo } from './debug.js';
 import { enforceLatestVersion } from './version-check.js';
 import { requestPermissionOrExit } from './permissions.js';
@@ -50,6 +50,19 @@ export async function main(): Promise<void> {
   if (cliContext.debug) {
     await printDebugInfo();
     return;
+  }
+
+  // Auto-detect custom API URL and use separate config file
+  // This prevents clobbering production ~/.claude.json when testing staging
+  if (!cliContext.configPath && isCustomApiUrl()) {
+    const autoPath = getAutoConfigPath();
+    if (autoPath) {
+      cliContext.configPath = autoPath;
+      console.log('\n⚠️  Custom API URL detected');
+      console.log(`   CEETRIX_API_URL = ${process.env.CEETRIX_API_URL}`);
+      console.log(`   Config will be saved to: ${autoPath}`);
+      console.log('   Your production ~/.claude.json will NOT be modified.\n');
+    }
   }
 
   console.log('\nCeetrix Setup');

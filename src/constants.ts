@@ -26,5 +26,59 @@ export const PORT_RANGE = [54321, 54322, 54323, 54324, 54325];
 
 /** MCP server URL for Claude Code config (HTTP transport) */
 export function getMcpServerUrl(): string {
-  return process.env.CEETRIX_MCP_URL || 'https://api.ceetrix.com/mcp';
+  // Explicit CEETRIX_MCP_URL takes precedence
+  if (process.env.CEETRIX_MCP_URL) {
+    return process.env.CEETRIX_MCP_URL;
+  }
+
+  // If custom API URL is set, derive MCP URL from it (append /sse)
+  // This prevents the common mistake of setting CEETRIX_API_URL but forgetting CEETRIX_MCP_URL
+  if (process.env.CEETRIX_API_URL) {
+    const apiUrl = process.env.CEETRIX_API_URL.replace(/\/+$/, '');
+    return `${apiUrl}/sse`;
+  }
+
+  // Default to production
+  return 'https://api.ceetrix.com/mcp';
+}
+
+/** Production API base URL (for comparison) */
+const PRODUCTION_API_URL = 'https://api.ceetrix.com';
+
+/**
+ * Check if we're using a custom (non-production) API URL.
+ *
+ * @returns true if CEETRIX_API_URL is set to something other than production
+ */
+export function isCustomApiUrl(): boolean {
+  const apiUrl = process.env.CEETRIX_API_URL;
+  if (!apiUrl) return false;
+
+  // Normalize by removing trailing slashes
+  const normalized = apiUrl.replace(/\/+$/, '');
+  return normalized !== PRODUCTION_API_URL;
+}
+
+/**
+ * Get the auto-generated config file path for custom API URLs.
+ *
+ * Extracts the hostname from CEETRIX_API_URL and creates a path like:
+ *   ~/.claude-ceetrix-staging-api.json (for staging-api.ceetrix.com)
+ *   ~/.claude-ceetrix-localhost.json (for localhost:8787)
+ *
+ * @returns Config file path, or null if using production URL
+ */
+export function getAutoConfigPath(): string | null {
+  const apiUrl = process.env.CEETRIX_API_URL;
+  if (!apiUrl || !isCustomApiUrl()) return null;
+
+  try {
+    const url = new URL(apiUrl);
+    // Extract hostname, replace dots/colons with dashes for filename safety
+    const hostname = url.host.replace(/[.:]/g, '-');
+    return `${process.env.HOME}/.claude-ceetrix-${hostname}.json`;
+  } catch {
+    // Invalid URL - shouldn't happen but handle gracefully
+    return `${process.env.HOME}/.claude-ceetrix-custom.json`;
+  }
 }
