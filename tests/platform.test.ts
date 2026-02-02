@@ -40,6 +40,11 @@ vi.mock('../src/server.js', () => ({
 
 vi.mock('../src/browser.js', () => ({
   openBrowser: vi.fn().mockResolvedValue(true),
+  canLaunchBrowser: vi.fn().mockReturnValue(true),
+}));
+
+vi.mock('../src/device-flow.js', () => ({
+  runDeviceFlow: vi.fn().mockResolvedValue({ apiKey: 'test', username: 'test', repos: [] }),
 }));
 
 vi.mock('../src/prompts.js', () => ({

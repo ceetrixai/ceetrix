@@ -1,5 +1,5 @@
 /**
- * Browser launch utilities
+ * Browser launch and detection utilities
  */
 
 import open from 'open';
@@ -24,4 +24,24 @@ export async function openBrowser(url: string): Promise<boolean> {
     console.log('[DEBUG] openBrowser: error:', err);
     return false;
   }
+}
+
+/**
+ * Check whether this environment can launch a browser.
+ *
+ * - macOS: always true (has `open` command)
+ * - Linux with DISPLAY or WAYLAND_DISPLAY: true (has a desktop session)
+ * - Linux without display server (SSH, headless): false
+ * - Other platforms: false
+ *
+ * Story 224: Used to auto-select device flow on headless environments.
+ */
+export function canLaunchBrowser(): boolean {
+  if (process.platform === 'darwin') return true;
+
+  if (process.platform === 'linux') {
+    return !!(process.env.DISPLAY || process.env.WAYLAND_DISPLAY);
+  }
+
+  return false;
 }

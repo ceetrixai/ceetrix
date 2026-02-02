@@ -5,7 +5,7 @@
 import { detectGitRemote, GitDetectionResult } from './git.js';
 import { checkExistingConfig, removeExistingConfig } from './config.js';
 import { startCallbackServer } from './server.js';
-import { openBrowser } from './browser.js';
+import { openBrowser, canLaunchBrowser } from './browser.js';
 import { promptForRepo, promptExistingConfig } from './prompts.js';
 import { checkClaudeCli, addConfig, writeConfigToFile } from './claude.js';
 import { getSetupUrl, AUTH_TIMEOUT_MS, getMcpServerUrl, isCustomApiUrl, getAutoConfigPath } from './constants.js';
@@ -13,11 +13,13 @@ import { printDebugInfo } from './debug.js';
 import { enforceLatestVersion } from './version-check.js';
 import { requestPermissionOrExit } from './permissions.js';
 import { runInviteFlow } from './invite.js';
+import { runDeviceFlow } from './device-flow.js';
 
 /** CLI context for debug/diagnostics */
 interface CliContext {
   debug: boolean;
   configPath: string | null;
+  noBrowser: boolean;
 }
 
 /** Parse command line arguments */
@@ -34,6 +36,7 @@ function parseArgs(): CliContext {
   return {
     debug: args.includes('--debug') || args.includes('-d'),
     configPath,
+    noBrowser: args.includes('--no-browser'),
   };
 }
 
@@ -144,8 +147,17 @@ export async function main(): Promise<void> {
     repo = await promptForRepo();
   }
 
-  // Run the setup flow
-  await runSetupFlow(repo, cliContext.configPath);
+  // Select auth flow: device flow for headless/--no-browser, browser flow otherwise
+  const useDeviceFlow = cliContext.noBrowser || !canLaunchBrowser();
+
+  if (useDeviceFlow) {
+    if (!cliContext.noBrowser) {
+      console.log('No display server detected. Using device code authentication.\n');
+    }
+    await runDeviceSetupFlow(repo, cliContext.configPath);
+  } else {
+    await runBrowserSetupFlow(repo, cliContext.configPath);
+  }
 }
 
 /**
@@ -193,12 +205,44 @@ async function handleExistingConfig(): Promise<'cancel' | 'done' | 'continue'> {
 }
 
 /**
- * Run the OAuth setup flow.
+ * Run the device flow setup (Story 224).
+ *
+ * Uses GitHub OAuth Device Flow (RFC 8628) — no browser needed.
+ * The CLI displays a code; user enters it at github.com/login/device on any device.
  *
  * @param repo - The repository to set up (owner/repo)
  * @param configPath - Optional custom config file path (null = use claude mcp add)
  */
-async function runSetupFlow(repo: string, configPath: string | null): Promise<void> {
+async function runDeviceSetupFlow(repo: string, configPath: string | null): Promise<void> {
+  const result = await runDeviceFlow({ repo });
+
+  if (!result) {
+    // User denied, code expired, or app not installed — messages already printed
+    process.exit(1);
+  }
+
+  // Show success
+  console.log(`✓ Authenticated as @${result.username}`);
+  if (result.repos.length > 0) {
+    console.log(`✓ Access granted to: ${result.repos.join(', ')}\n`);
+  } else {
+    console.log('');
+  }
+
+  // Write config (same as browser flow)
+  await writeConfig(result.apiKey, configPath);
+}
+
+/**
+ * Run the browser-based OAuth setup flow (existing behaviour).
+ *
+ * Opens a browser for GitHub OAuth; receives callback on localhost.
+ * Falls back to device flow if the browser fails to open.
+ *
+ * @param repo - The repository to set up (owner/repo)
+ * @param configPath - Optional custom config file path (null = use claude mcp add)
+ */
+async function runBrowserSetupFlow(repo: string, configPath: string | null): Promise<void> {
   // Start callback server
   const { port, waitForCallback, close } = await startCallbackServer();
 
@@ -207,16 +251,17 @@ async function runSetupFlow(repo: string, configPath: string | null): Promise<vo
     const callbackUrl = `http://localhost:${port}/callback`;
     const setupUrl = `${getSetupUrl()}?callback=${encodeURIComponent(callbackUrl)}&repo=${encodeURIComponent(repo)}`;
 
-    // Open browser
+    // Try to open browser
     const opened = await openBrowser(setupUrl);
     if (!opened) {
-      console.log('Could not open browser automatically.');
-      console.log('Please open this URL manually:\n');
-      console.log(`  ${setupUrl}\n`);
-    } else {
-      console.log('Opening browser for GitHub authentication...');
+      // Browser failed — fall back to device flow explicitly (not silently)
+      close();
+      console.log('Could not open browser. Switching to device code authentication.\n');
+      await runDeviceSetupFlow(repo, configPath);
+      return;
     }
 
+    console.log('Opening browser for GitHub authentication...');
     console.log('Waiting for authentication...\n');
 
     // Wait for callback with timeout
@@ -242,22 +287,31 @@ async function runSetupFlow(repo: string, configPath: string | null): Promise<vo
       console.log('');
     }
 
-    // Add to Claude config
-    if (configPath) {
-      // Write directly to custom config file (non-destructive to ~/.claude.json)
-      console.log(`Writing Ceetrix config to ${configPath}...`);
-      await writeConfigToFile(result.apiKey, getMcpServerUrl(), configPath);
-      console.log('✓ Configuration written\n');
-      printCustomConfigNotice(configPath);
-    } else {
-      // Use claude mcp add (writes to ~/.claude.json)
-      console.log('Adding Ceetrix to Claude Code...');
-      await addConfig(result.apiKey);
-      console.log('✓ Configuration added\n');
-      printRestartNotice();
-    }
+    // Write config
+    await writeConfig(result.apiKey, configPath);
   } finally {
     close();
+  }
+}
+
+/**
+ * Write MCP config to Claude Code or a custom file.
+ *
+ * Shared by both browser and device flow paths.
+ */
+async function writeConfig(apiKey: string, configPath: string | null): Promise<void> {
+  if (configPath) {
+    // Write directly to custom config file (non-destructive to ~/.claude.json)
+    console.log(`Writing Ceetrix config to ${configPath}...`);
+    await writeConfigToFile(apiKey, getMcpServerUrl(), configPath);
+    console.log('✓ Configuration written\n');
+    printCustomConfigNotice(configPath);
+  } else {
+    // Use claude mcp add (writes to ~/.claude.json)
+    console.log('Adding Ceetrix to Claude Code...');
+    await addConfig(apiKey);
+    console.log('✓ Configuration added\n');
+    printRestartNotice();
   }
 }
 

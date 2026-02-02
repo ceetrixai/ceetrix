@@ -42,6 +42,44 @@ export function getMcpServerUrl(): string {
   return 'https://api.ceetrix.com/mcp';
 }
 
+// --- Device Flow constants (Story 224) ---
+
+/** GitHub device authorization endpoint (RFC 8628) */
+export const GITHUB_DEVICE_CODE_URL = 'https://github.com/login/device/code';
+
+/** GitHub device token polling endpoint */
+export const GITHUB_DEVICE_TOKEN_URL = 'https://github.com/login/oauth/access_token';
+
+/** OAuth grant type for device authorization (RFC 8628 section 3.4) */
+export const DEVICE_FLOW_GRANT_TYPE = 'urn:ietf:params:oauth:grant-type:device_code';
+
+/** Minimum poll interval in seconds per RFC 8628 section 3.5 */
+export const DEVICE_POLL_INTERVAL_SECONDS = 5;
+
+/** Interval increase when GitHub returns slow_down (seconds, RFC 8628 section 3.5) */
+export const DEVICE_POLL_SLOWDOWN_INCREMENT_SECONDS = 5;
+
+/** Maximum time to wait for device flow authorization (seconds). Matches GitHub's device_code expiry. */
+export const DEVICE_FLOW_TIMEOUT_SECONDS = 900;
+
+/** Client-id endpoint path */
+export const CLIENT_ID_PATH = '/setup/client-id';
+
+/** Device completion endpoint path */
+export const DEVICE_COMPLETE_PATH = '/setup/device-complete';
+
+/** Client-id endpoint URL */
+export function getClientIdUrl(): string {
+  return `${getApiBaseUrl()}${CLIENT_ID_PATH}`;
+}
+
+/** Device completion endpoint URL */
+export function getDeviceCompleteUrl(): string {
+  return `${getApiBaseUrl()}${DEVICE_COMPLETE_PATH}`;
+}
+
+// --- End Device Flow constants ---
+
 /** Production API base URL (for comparison) */
 const PRODUCTION_API_URL = 'https://api.ceetrix.com';
 
