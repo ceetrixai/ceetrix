@@ -186,7 +186,7 @@ describe('getAutoConfigPath', () => {
     withEnv({ CEETRIX_API_URL: 'https://staging-api.ceetrix.com' }, () => {
       const path = getAutoConfigPath();
       expect(path).toContain('staging-api-ceetrix-com');
-      expect(path).toEndWith('.json');
+      expect(path).toMatch(/\.json$/);
       expect(path).toContain('.claude-ceetrix-');
     });
   });
@@ -195,7 +195,7 @@ describe('getAutoConfigPath', () => {
     withEnv({ CEETRIX_API_URL: 'http://localhost:8787' }, () => {
       const path = getAutoConfigPath();
       expect(path).toContain('localhost-8787');
-      expect(path).toEndWith('.json');
+      expect(path).toMatch(/\.json$/);
     });
   });
 
@@ -204,7 +204,7 @@ describe('getAutoConfigPath', () => {
       const path = getAutoConfigPath();
       // The hostname part should have dots/colons converted to dashes
       expect(path).toContain('test-api-example-com-9000');
-      expect(path).toEndWith('.json');
+      expect(path).toMatch(/\.json$/);
     });
   });
 });
