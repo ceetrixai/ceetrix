@@ -1,14 +1,16 @@
 /**
- * Ceetrix CLI - Set up Ceetrix backlog management for Claude Code
+ * Ceetrix CLI - Set up Ceetrix backlog management for coding agents
  */
 
 import { detectGitRemote, GitDetectionResult } from './git.js';
-import { checkExistingConfig, removeExistingConfig } from './config.js';
+import { getAgentStatuses, removeExistingConfig } from './config.js';
+import type { AgentStatus } from './config.js';
 import { startCallbackServer } from './server.js';
 import { openBrowser, canLaunchBrowser } from './browser.js';
-import { promptForRepo, promptExistingConfig } from './prompts.js';
-import { checkClaudeCli, addConfig, writeConfigToFile } from './claude.js';
-import { getSetupUrl, AUTH_TIMEOUT_MS, getMcpServerUrl, isCustomApiUrl, getAutoConfigPath } from './constants.js';
+import { promptForRepo, promptExistingConfig, promptAgentWizard, AgentType } from './prompts.js';
+import { addConfig as addClaudeConfig, writeConfigToFile } from './claude.js';
+import { addConfig as addCodexConfig } from './codex.js';
+import { getSetupUrl, AUTH_TIMEOUT_MS, getMcpServerUrl, isCustomApiUrl, getAutoConfigPath, CODEX_API_KEY_ENV_VAR } from './constants.js';
 import { printDebugInfo } from './debug.js';
 import { enforceLatestVersion } from './version-check.js';
 import { requestPermissionOrExit } from './permissions.js';
@@ -76,7 +78,7 @@ export async function main(): Promise<void> {
   // Platform check - macOS and Linux only
   if (!SUPPORTED_PLATFORMS.includes(process.platform)) {
     console.error(`✗ Unsupported platform: ${process.platform}\n`);
-    console.error('Ceetrix currently supports macOS and Linux + Claude Code only.');
+    console.error('Ceetrix currently supports macOS and Linux only.');
     console.error('Windows support coming soon.');
     console.error('');
     console.error('Join the Discord for updates: https://ceetrix.com/discord\n');
@@ -88,27 +90,42 @@ export async function main(): Promise<void> {
     await requestPermissionOrExit();
   }
 
-  // Check Claude CLI is available (skip if using custom config - we write directly)
+  // Detect available agents and their config status (skip if using custom config)
+  let selectedAgents: AgentType[] = ['claude'];
+
   if (!cliContext.configPath) {
-    const claudeAvailable = await checkClaudeCli();
-    if (!claudeAvailable) {
-      console.error('✗ Claude Code CLI not found or version too old\n');
-      console.error('Ceetrix requires Claude Code version 2.0 or later.');
-      console.error('Install/update: https://docs.anthropic.com/en/docs/claude-code');
+    const statuses = await getAgentStatuses();
+    const detected = (Object.entries(statuses) as [AgentType, AgentStatus][])
+      .filter(([, s]) => s.detected);
+
+    if (detected.length === 0) {
+      console.error('✗ No supported coding agent found\n');
+      console.error('Ceetrix works with:');
+      console.error('  - Claude Code (v2.0+): https://docs.anthropic.com/en/docs/claude-code');
+      console.error('  - OpenAI Codex CLI:    https://github.com/openai/codex');
       console.error('');
       console.error('Run: npx ceetrix --debug');
       console.error('for diagnostic info to share at: https://ceetrix.com/discord\n');
       process.exit(1);
     }
 
-    // Check if already configured (only when writing to default location)
-    const existingConfig = await checkExistingConfig();
-    if (existingConfig) {
+    // If all detected agents are already configured, show existing config menu
+    const allConfigured = detected.every(([, s]) => s.configured);
+    if (allConfigured) {
       const action = await handleExistingConfig();
       if (action === 'cancel' || action === 'done') {
         return;
       }
-      // For 'continue', proceed with normal flow
+      // For 'continue' (re-auth), configure all detected agents
+      selectedAgents = detected.map(([agent]) => agent);
+    } else {
+      // Show wizard for incremental agent selection
+      selectedAgents = await promptAgentWizard(statuses);
+      if (selectedAgents.length === 0) {
+        console.log('No agents selected.\n');
+        return;
+      }
+      console.log('');
     }
   } else {
     console.log(`Writing config to: ${cliContext.configPath}\n`);
@@ -150,9 +167,9 @@ export async function main(): Promise<void> {
     if (!cliContext.noBrowser) {
       console.log('No display server detected. Using device code authentication.\n');
     }
-    await runDeviceSetupFlow(repo, cliContext.configPath);
+    await runDeviceSetupFlow(repo, cliContext.configPath, selectedAgents);
   } else {
-    await runBrowserSetupFlow(repo, cliContext.configPath);
+    await runBrowserSetupFlow(repo, cliContext.configPath, selectedAgents);
   }
 }
 
@@ -207,9 +224,10 @@ async function handleExistingConfig(): Promise<'cancel' | 'done' | 'continue'> {
  * The CLI displays a code; user enters it at github.com/login/device on any device.
  *
  * @param repo - The repository to set up (owner/repo)
- * @param configPath - Optional custom config file path (null = use claude mcp add)
+ * @param configPath - Optional custom config file path (null = use agent's default config)
+ * @param agents - Which agents to configure
  */
-async function runDeviceSetupFlow(repo: string, configPath: string | null): Promise<void> {
+async function runDeviceSetupFlow(repo: string, configPath: string | null, agents: AgentType[]): Promise<void> {
   const result = await runDeviceFlow({ repo });
 
   if (!result) {
@@ -225,8 +243,8 @@ async function runDeviceSetupFlow(repo: string, configPath: string | null): Prom
     console.log('');
   }
 
-  // Write config (same as browser flow)
-  await writeConfig(result.apiKey, configPath);
+  // Write config for each selected agent
+  await writeConfig(result.apiKey, configPath, agents);
 }
 
 /**
@@ -236,9 +254,10 @@ async function runDeviceSetupFlow(repo: string, configPath: string | null): Prom
  * Falls back to device flow if the browser fails to open.
  *
  * @param repo - The repository to set up (owner/repo)
- * @param configPath - Optional custom config file path (null = use claude mcp add)
+ * @param configPath - Optional custom config file path (null = use agent's default config)
+ * @param agents - Which agents to configure
  */
-async function runBrowserSetupFlow(repo: string, configPath: string | null): Promise<void> {
+async function runBrowserSetupFlow(repo: string, configPath: string | null, agents: AgentType[]): Promise<void> {
   // Start callback server
   const { port, waitForCallback, close } = await startCallbackServer();
 
@@ -253,7 +272,7 @@ async function runBrowserSetupFlow(repo: string, configPath: string | null): Pro
       // Browser failed — fall back to device flow explicitly (not silently)
       close();
       console.log('Could not open browser. Switching to device code authentication.\n');
-      await runDeviceSetupFlow(repo, configPath);
+      await runDeviceSetupFlow(repo, configPath, agents);
       return;
     }
 
@@ -283,31 +302,50 @@ async function runBrowserSetupFlow(repo: string, configPath: string | null): Pro
       console.log('');
     }
 
-    // Write config
-    await writeConfig(result.apiKey, configPath);
+    // Write config for each selected agent
+    await writeConfig(result.apiKey, configPath, agents);
   } finally {
     close();
   }
 }
 
 /**
- * Write MCP config to Claude Code or a custom file.
+ * Write MCP config to all selected agents or a custom file.
  *
  * Shared by both browser and device flow paths.
+ *
+ * @param apiKey - The API key from authentication
+ * @param configPath - Custom config file path (null = use agent's default)
+ * @param agents - Which agents to configure
  */
-async function writeConfig(apiKey: string, configPath: string | null): Promise<void> {
+async function writeConfig(apiKey: string, configPath: string | null, agents: AgentType[]): Promise<void> {
   if (configPath) {
-    // Write directly to custom config file (non-destructive to ~/.claude.json)
+    // Write directly to custom config file (non-destructive to default configs)
     console.log(`Writing Ceetrix config to ${configPath}...`);
     await writeConfigToFile(apiKey, getMcpServerUrl(), configPath);
     console.log('✓ Configuration written\n');
     printCustomConfigNotice(configPath);
-  } else {
-    // Use claude mcp add (writes to ~/.claude.json)
-    console.log('Adding Ceetrix to Claude Code...');
-    await addConfig(apiKey);
-    console.log('✓ Configuration added\n');
-    printRestartNotice();
+    return;
+  }
+
+  const url = getMcpServerUrl();
+
+  for (const agent of agents) {
+    switch (agent) {
+      case 'claude':
+        console.log('Adding Ceetrix to Claude Code...');
+        await addClaudeConfig(apiKey);
+        console.log('✓ Configuration added\n');
+        printRestartNotice();
+        break;
+
+      case 'codex':
+        console.log('Adding Ceetrix to Codex CLI...');
+        await addCodexConfig(apiKey, url);
+        console.log('✓ Configuration added\n');
+        printCodexEnvNotice(apiKey);
+        break;
+    }
   }
 }
 
@@ -360,5 +398,24 @@ function printCustomConfigNotice(configPath: string): void {
   console.log(`│    claude --mcp-config ${configPath}`);
   console.log('│                                                                  │');
   console.log('│  Your production ~/.claude.json was NOT modified.               │');
+  console.log('└─────────────────────────────────────────────────────────────────┘\n');
+}
+
+/**
+ * Print notice for Codex CLI users about setting the env var.
+ *
+ * Codex reads API keys from environment variables at runtime.
+ * The TOML config references the var name; user must set the var.
+ *
+ * @param apiKey - The actual API key to show in the export command
+ */
+function printCodexEnvNotice(apiKey: string): void {
+  console.log('┌─────────────────────────────────────────────────────────────────┐');
+  console.log('│  IMPORTANT: Set your API key as an environment variable         │');
+  console.log('│                                                                  │');
+  console.log('│  Add to your shell profile (~/.bashrc, ~/.zshrc, etc.):         │');
+  console.log(`│    export ${CODEX_API_KEY_ENV_VAR}="${apiKey}"`);
+  console.log('│                                                                  │');
+  console.log('│  Then restart your shell and run codex.                          │');
   console.log('└─────────────────────────────────────────────────────────────────┘\n');
 }

@@ -12,11 +12,13 @@ let permissionGranted = false;
 
 /** Commands that will be executed */
 const COMMANDS_DESCRIPTION = `
-• which claude          (find Claude CLI location)
-• claude --version      (verify it's Claude Code)
-• claude mcp list       (check existing config)
-• claude mcp add        (add Ceetrix server)
-• claude mcp remove     (if reconfiguring)
+• which claude / codex  (find CLI locations)
+• claude --version      (verify Claude Code)
+• codex --version       (verify Codex CLI)
+• claude mcp list       (check existing Claude config)
+• claude mcp add        (add Ceetrix to Claude)
+• claude mcp remove     (if reconfiguring Claude)
+• Read/write ~/.codex/config.toml (Codex config)
 `;
 
 /**

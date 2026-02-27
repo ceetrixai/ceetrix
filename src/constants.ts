@@ -80,6 +80,39 @@ export function getDeviceCompleteUrl(): string {
 
 // --- End Device Flow constants ---
 
+// --- Codex CLI constants (Story 397) ---
+
+/** Codex CLI config directory (relative to home) */
+export const CODEX_CONFIG_DIR = '.codex';
+
+/** Codex CLI config filename */
+export const CODEX_CONFIG_FILE = 'config.toml';
+
+/** MCP server name in Codex TOML config */
+export const CODEX_MCP_SERVER_NAME = 'ceetrix';
+
+/** Environment variable name for API key in Codex env_http_headers */
+export const CODEX_API_KEY_ENV_VAR = 'CEETRIX_API_KEY';
+
+/** Expected string in Codex CLI version output (lowercase match) */
+export const CODEX_VERSION_MARKER = 'codex';
+
+/** Timeout for Codex CLI commands in milliseconds */
+export const CODEX_COMMAND_TIMEOUT_MS = 10000;
+
+/** Short timeout for Codex version check */
+export const CODEX_VERSION_CHECK_TIMEOUT_MS = 3000;
+
+/** Common installation paths for Codex CLI (fallback when not in PATH) */
+export const COMMON_CODEX_PATHS = [
+  '/opt/homebrew/bin/codex',
+  '/usr/local/bin/codex',
+  '/usr/bin/codex',
+  `${process.env.HOME}/.local/bin/codex`,
+];
+
+// --- End Codex CLI constants ---
+
 /** Production API base URL (for comparison) */
 const PRODUCTION_API_URL = 'https://api.ceetrix.com';
 

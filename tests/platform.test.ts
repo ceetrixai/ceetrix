@@ -18,12 +18,19 @@ vi.mock('../src/permissions.js', () => ({
 }));
 
 vi.mock('../src/claude.js', () => ({
-  checkClaudeCli: vi.fn().mockResolvedValue(true),
+  addConfig: vi.fn(),
+}));
+
+vi.mock('../src/codex.js', () => ({
   addConfig: vi.fn(),
 }));
 
 vi.mock('../src/config.js', () => ({
-  checkExistingConfig: vi.fn().mockResolvedValue(false),
+  getAgentStatuses: vi.fn().mockResolvedValue({
+    claude: { detected: true, configured: false },
+    codex: { detected: false, configured: false },
+  }),
+  removeExistingConfig: vi.fn(),
 }));
 
 vi.mock('../src/git.js', () => ({
@@ -50,6 +57,7 @@ vi.mock('../src/device-flow.js', () => ({
 vi.mock('../src/prompts.js', () => ({
   promptForRepo: vi.fn(),
   promptExistingConfig: vi.fn(),
+  promptAgentWizard: vi.fn().mockResolvedValue(['claude']),
 }));
 
 describe('platform checks', () => {

@@ -7,7 +7,18 @@
 
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { readFile } from 'fs/promises';
+import { join } from 'path';
+import { homedir } from 'os';
 import which from 'which';
+import {
+  CODEX_CONFIG_DIR,
+  CODEX_CONFIG_FILE,
+  CODEX_API_KEY_ENV_VAR,
+  CODEX_VERSION_MARKER,
+  CODEX_VERSION_CHECK_TIMEOUT_MS,
+  COMMON_CODEX_PATHS,
+} from './constants.js';
 
 const execAsync = promisify(exec);
 
@@ -118,9 +129,62 @@ export async function printDebugInfo(): Promise<void> {
   }
   console.log('');
 
-  // Existing MCP config
-  console.log('Ceetrix MCP Config');
-  console.log('──────────────────');
+  // Codex CLI detection
+  console.log('Codex CLI Detection');
+  console.log('───────────────────');
+
+  async function checkCodexVersion(path: string): Promise<string> {
+    try {
+      const { stdout } = await execAsync(`"${path}" --version`, {
+        timeout: CODEX_VERSION_CHECK_TIMEOUT_MS,
+      });
+      if (stdout.toLowerCase().includes(CODEX_VERSION_MARKER)) {
+        return `✓ Codex CLI (${stdout.trim()})`;
+      }
+      return `✗ NOT Codex CLI (responds: ${stdout.trim().slice(0, 40)})`;
+    } catch (e) {
+      const err = e as { killed?: boolean };
+      if (err.killed) return '✗ TIMEOUT';
+      return '✗ NOT FOUND or ERROR';
+    }
+  }
+
+  let codexWhichPath: string | null = null;
+  try {
+    codexWhichPath = await which('codex');
+    const status = await checkCodexVersion(codexWhichPath);
+    console.log(`  which('codex'):   ${codexWhichPath}`);
+    console.log(`                    ${status}`);
+  } catch {
+    console.log(`  which('codex'):   NOT IN PATH`);
+  }
+
+  for (const path of COMMON_CODEX_PATHS) {
+    if (path === codexWhichPath) continue;
+    const status = await checkCodexVersion(path);
+    console.log(`  ${path}:`);
+    console.log(`                    ${status}`);
+  }
+
+  // Codex config file
+  const codexConfigPath = join(homedir(), CODEX_CONFIG_DIR, CODEX_CONFIG_FILE);
+  console.log(`  Config file:      ${codexConfigPath}`);
+  try {
+    const content = await readFile(codexConfigPath, 'utf-8');
+    if (content.includes('ceetrix')) {
+      console.log('  Ceetrix entry:    CONFIGURED');
+    } else {
+      console.log('  Ceetrix entry:    NOT CONFIGURED');
+    }
+  } catch {
+    console.log('  Ceetrix entry:    FILE NOT FOUND');
+  }
+  console.log(`  ${CODEX_API_KEY_ENV_VAR}:  ${process.env[CODEX_API_KEY_ENV_VAR] ? 'SET' : 'NOT SET'}`);
+  console.log('');
+
+  // Existing MCP config (Claude)
+  console.log('Ceetrix MCP Config (Claude)');
+  console.log('───────────────────────────');
   try {
     const { stdout } = await execAsync('claude mcp list', { timeout: DIAG_TIMEOUT_MS });
     if (stdout.includes('ceetrix:')) {
@@ -147,7 +211,7 @@ export async function printDebugInfo(): Promise<void> {
   console.log('');
 
   console.log('─────────────────────────────────────────────────────');
-  console.log('Ceetrix supports macOS and Linux + Claude Code.');
+  console.log('Ceetrix supports macOS and Linux with Claude Code and Codex CLI.');
   console.log('');
   console.log('If you have issues, copy the above and post to the');
   console.log('Ceetrix Discord: https://ceetrix.com/discord');

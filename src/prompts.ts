@@ -2,7 +2,8 @@
  * Interactive prompts for user input
  */
 
-import { input, select } from '@inquirer/prompts';
+import { input, select, checkbox } from '@inquirer/prompts';
+import type { AgentStatus } from './config.js';
 
 /**
  * Prompt user for repository in owner/repo format.
@@ -48,6 +49,59 @@ export async function promptExistingConfig(): Promise<ExistingConfigAction> {
     ],
   });
   return action;
+}
+
+/** Supported agent types */
+export type AgentType = 'claude' | 'codex';
+
+/** Display labels for each agent type */
+const AGENT_LABELS: Record<AgentType, string> = {
+  claude: 'Claude Code',
+  codex: 'OpenAI Codex CLI',
+};
+
+/**
+ * Wizard-style prompt for incremental agent configuration.
+ *
+ * Shows all detected agents with their config status. Already-configured
+ * agents appear disabled. Unconfigured agents are pre-checked.
+ *
+ * Auto-selects when exactly one unconfigured agent is detected and no
+ * others are present (skip the prompt entirely).
+ *
+ * @param statuses - Per-agent detection and configuration status
+ * @returns Array of agent types selected for configuration (may be empty)
+ */
+export async function promptAgentWizard(
+  statuses: Record<AgentType, AgentStatus>,
+): Promise<AgentType[]> {
+  const detected = (Object.entries(statuses) as [AgentType, AgentStatus][])
+    .filter(([, s]) => s.detected);
+
+  if (detected.length === 0) return [];
+
+  const unconfigured = detected.filter(([, s]) => !s.configured);
+
+  // Single unconfigured agent, no other agents detected → auto-select
+  if (unconfigured.length === detected.length && detected.length === 1) {
+    return [detected[0][0]];
+  }
+
+  const choices = detected.map(([agent, status]) => ({
+    name: status.configured
+      ? `${AGENT_LABELS[agent]} (configured)`
+      : AGENT_LABELS[agent],
+    value: agent,
+    checked: !status.configured,
+    disabled: status.configured ? '(already configured)' as const : false as const,
+  }));
+
+  const selected = await checkbox({
+    message: 'Which agents should Ceetrix be configured for?',
+    choices,
+  });
+
+  return selected;
 }
 
 /**
