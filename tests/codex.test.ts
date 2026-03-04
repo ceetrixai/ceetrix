@@ -27,7 +27,6 @@ vi.mock('../src/constants.js', () => ({
   CODEX_CONFIG_DIR: '.codex',
   CODEX_CONFIG_FILE: 'config.toml',
   CODEX_MCP_SERVER_NAME: 'ceetrix',
-  CODEX_API_KEY_ENV_VAR: 'CEETRIX_API_KEY',
   CODEX_VERSION_MARKER: 'codex',
   CODEX_VERSION_CHECK_TIMEOUT_MS: 3000,
   COMMON_CODEX_PATHS: ['/usr/local/bin/codex'],
@@ -125,7 +124,7 @@ describe('addConfig', () => {
     expect(mockWriteFile).toHaveBeenCalledOnce();
   });
 
-  it('writes env var name, NOT the actual API key', async () => {
+  it('writes actual API key via http_headers', async () => {
     const { readFile, writeFile, mkdir } = await import('fs/promises');
     const mockReadFile = vi.mocked(readFile);
     const mockWriteFile = vi.mocked(writeFile);
@@ -138,13 +137,12 @@ describe('addConfig', () => {
     await addConfig('super_secret_actual_key', 'https://api.ceetrix.com/mcp');
 
     const writtenContent = mockWriteFile.mock.calls[0][1] as string;
-    // Must NOT contain the actual key
-    expect(writtenContent).not.toContain('super_secret_actual_key');
-    // Must contain the env var name
-    expect(writtenContent).toContain('CEETRIX_API_KEY');
+    // Must contain the actual key in http_headers
+    expect(writtenContent).toContain('super_secret_actual_key');
+    expect(writtenContent).toContain('http_headers');
   });
 
-  it('uses env_http_headers, not http_headers', async () => {
+  it('uses http_headers, not env_http_headers', async () => {
     const { readFile, writeFile, mkdir } = await import('fs/promises');
     vi.mocked(readFile).mockRejectedValue(new Error('ENOENT'));
     vi.mocked(writeFile).mockResolvedValue();
@@ -154,8 +152,8 @@ describe('addConfig', () => {
     await addConfig('key', 'https://api.ceetrix.com/mcp');
 
     const writtenContent = vi.mocked(writeFile).mock.calls[0][1] as string;
-    expect(writtenContent).toContain('env_http_headers');
-    expect(writtenContent).not.toMatch(/(?<!\w)http_headers(?!\w)/);
+    expect(writtenContent).toContain('http_headers');
+    expect(writtenContent).not.toContain('env_http_headers');
   });
 
   it('writes correct MCP server URL', async () => {
@@ -197,6 +195,29 @@ describe('addConfig', () => {
     expect(writtenContent).toContain('ceetrix');
     expect(writtenContent).toContain('https://api.ceetrix.com/mcp');
   });
+
+  it('TOML round-trip: written config parses back with correct structure', async () => {
+    const { parse } = await import('smol-toml');
+    const { readFile, writeFile, mkdir } = await import('fs/promises');
+    vi.mocked(readFile).mockRejectedValue(new Error('ENOENT'));
+    vi.mocked(writeFile).mockResolvedValue();
+    vi.mocked(mkdir).mockResolvedValue(undefined);
+
+    const { addConfig } = await import('../src/codex.js');
+    await addConfig('cxk_test_key_abc123', 'https://api.ceetrix.com/mcp');
+
+    const writtenContent = vi.mocked(writeFile).mock.calls[0][1] as string;
+    const parsed = parse(writtenContent) as Record<string, unknown>;
+    const servers = parsed.mcp_servers as Record<string, Record<string, unknown>>;
+
+    // Structure matches what Codex expects
+    expect(servers.ceetrix).toBeDefined();
+    expect(servers.ceetrix.url).toBe('https://api.ceetrix.com/mcp');
+    expect(servers.ceetrix.http_headers).toEqual({ 'X-API-Key': 'cxk_test_key_abc123' });
+
+    // Regression guard: env_http_headers must NOT be present
+    expect(servers.ceetrix.env_http_headers).toBeUndefined();
+  });
 });
 
 describe('checkExistingConfig', () => {
@@ -210,7 +231,7 @@ describe('checkExistingConfig', () => {
     const toml = [
       '[mcp_servers.ceetrix]',
       'url = "https://api.ceetrix.com/mcp"',
-      'env_http_headers = { "X-API-Key" = "CEETRIX_API_KEY" }',
+      'http_headers = { "X-API-Key" = "cxk_test123" }',
     ].join('\n');
     vi.mocked(readFile).mockResolvedValue(toml as any);
 

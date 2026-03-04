@@ -40,7 +40,6 @@ vi.mock('../src/constants.js', () => ({
   getMcpServerUrl: () => 'https://mcp.ceetrix.com',
   isCustomApiUrl: () => false,
   getAutoConfigPath: () => null,
-  CODEX_API_KEY_ENV_VAR: 'CEETRIX_API_KEY',
 }));
 
 // Mock permissions - auto-grant in tests
@@ -524,10 +523,7 @@ describe('agent wizard flow (Story 397)', () => {
     await main();
 
     expect(mockConsoleLog).toHaveBeenCalledWith(
-      expect.stringContaining('CEETRIX_API_KEY')
-    );
-    expect(mockConsoleLog).toHaveBeenCalledWith(
-      expect.stringContaining('codex_key')
+      expect.stringContaining('Restart Codex CLI')
     );
   });
 
@@ -552,7 +548,7 @@ describe('agent wizard flow (Story 397)', () => {
       expect.stringContaining('Restart Claude Code')
     );
     expect(mockConsoleLog).toHaveBeenCalledWith(
-      expect.stringContaining('CEETRIX_API_KEY')
+      expect.stringContaining('Restart Codex CLI')
     );
   });
 });

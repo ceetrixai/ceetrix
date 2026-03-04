@@ -10,7 +10,7 @@ import { openBrowser, canLaunchBrowser } from './browser.js';
 import { promptForRepo, promptExistingConfig, promptAgentWizard, AgentType } from './prompts.js';
 import { addConfig as addClaudeConfig, writeConfigToFile } from './claude.js';
 import { addConfig as addCodexConfig } from './codex.js';
-import { getSetupUrl, AUTH_TIMEOUT_MS, getMcpServerUrl, isCustomApiUrl, getAutoConfigPath, CODEX_API_KEY_ENV_VAR } from './constants.js';
+import { getSetupUrl, AUTH_TIMEOUT_MS, getMcpServerUrl, isCustomApiUrl, getAutoConfigPath } from './constants.js';
 import { printDebugInfo } from './debug.js';
 import { enforceLatestVersion } from './version-check.js';
 import { requestPermissionOrExit } from './permissions.js';
@@ -343,7 +343,7 @@ async function writeConfig(apiKey: string, configPath: string | null, agents: Ag
         console.log('Adding Ceetrix to Codex CLI...');
         await addCodexConfig(apiKey, url);
         console.log('✓ Configuration added\n');
-        printCodexEnvNotice(apiKey);
+        printCodexRestartNotice();
         break;
     }
   }
@@ -402,20 +402,13 @@ function printCustomConfigNotice(configPath: string): void {
 }
 
 /**
- * Print notice for Codex CLI users about setting the env var.
- *
- * Codex reads API keys from environment variables at runtime.
- * The TOML config references the var name; user must set the var.
- *
- * @param apiKey - The actual API key to show in the export command
+ * Print restart notice for Codex CLI users.
  */
-function printCodexEnvNotice(apiKey: string): void {
+function printCodexRestartNotice(): void {
   console.log('┌─────────────────────────────────────────────────────────────────┐');
-  console.log('│  IMPORTANT: Set your API key as an environment variable         │');
+  console.log('│  Restart Codex CLI to activate Ceetrix                          │');
   console.log('│                                                                  │');
-  console.log('│  Add to your shell profile (~/.bashrc, ~/.zshrc, etc.):         │');
-  console.log(`│    export ${CODEX_API_KEY_ENV_VAR}="${apiKey}"`);
-  console.log('│                                                                  │');
-  console.log('│  Then restart your shell and run codex.                          │');
+  console.log('│  Quit and reopen Codex, then describe a feature you             │');
+  console.log('│  want to build and ask Codex to "create a story for it".        │');
   console.log('└─────────────────────────────────────────────────────────────────┘\n');
 }

@@ -36,7 +36,7 @@ export async function requestPermissionOrExit(): Promise<void> {
   console.log('│  Ceetrix needs to run the following commands:                │');
   console.log('│                                                              │');
   for (const line of COMMANDS_DESCRIPTION.trim().split('\n')) {
-    console.log(`│  ${line.padEnd(58)}│`);
+    console.log(`│  ${line.padEnd(60)}│`);
   }
   console.log('│                                                              │');
   console.log('│  All results stay local on your machine.                     │');

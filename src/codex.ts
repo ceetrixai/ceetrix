@@ -2,10 +2,10 @@
  * OpenAI Codex CLI integration (Story 397)
  *
  * Codex uses TOML config at ~/.codex/config.toml.
- * API keys are referenced via environment variables (env_http_headers),
- * never stored in plaintext.
+ * API key stored via http_headers (static headers sent with each request).
  *
- * Direct file write because `codex mcp add` does not support custom headers.
+ * Direct file write because `codex mcp add` only supports bearer_token_env_var,
+ * not arbitrary headers like X-API-Key.
  */
 
 import { readFile, writeFile, mkdir } from 'fs/promises';
@@ -19,7 +19,6 @@ import {
   CODEX_CONFIG_DIR,
   CODEX_CONFIG_FILE,
   CODEX_MCP_SERVER_NAME,
-  CODEX_API_KEY_ENV_VAR,
   CODEX_VERSION_MARKER,
   CODEX_VERSION_CHECK_TIMEOUT_MS,
   COMMON_CODEX_PATHS,
@@ -31,7 +30,7 @@ const execAsync = promisify(exec);
 interface CodexConfig {
   mcp_servers?: Record<string, {
     url?: string;
-    env_http_headers?: Record<string, string>;
+    http_headers?: Record<string, string>;
     [key: string]: unknown;
   }>;
   [key: string]: unknown;
@@ -113,13 +112,13 @@ export async function isCodexAvailable(): Promise<boolean> {
  * Add Ceetrix MCP server configuration to Codex.
  *
  * Reads existing config.toml, merges ceetrix entry, writes back.
- * Uses env_http_headers so the API key is read from an environment
- * variable at runtime, never stored in plaintext.
+ * Uses http_headers to store the API key directly — same approach as
+ * Claude Code's JSON config.
  *
- * @param _apiKey - Not written to TOML. The env var name is written instead.
+ * @param apiKey - The API key to store in config.toml
  * @param url - The MCP server URL
  */
-export async function addConfig(_apiKey: string, url: string): Promise<void> {
+export async function addConfig(apiKey: string, url: string): Promise<void> {
   const configDir = getConfigDir();
   const configPath = getConfigPath();
 
@@ -142,7 +141,7 @@ export async function addConfig(_apiKey: string, url: string): Promise<void> {
 
   config.mcp_servers[CODEX_MCP_SERVER_NAME] = {
     url,
-    env_http_headers: { 'X-API-Key': CODEX_API_KEY_ENV_VAR },
+    http_headers: { 'X-API-Key': apiKey },
   };
 
   await writeFile(configPath, stringify(config), 'utf-8');
