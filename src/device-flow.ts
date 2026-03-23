@@ -21,6 +21,7 @@ import {
 /** Parameters for running the device flow */
 export interface DeviceFlowSpec {
   repo?: string;
+  termsVersion?: string;
 }
 
 /** Successful result from device flow completion */
@@ -222,11 +223,15 @@ async function pollForToken(clientId: string, deviceCode: string, initialInterva
  * Sends the GitHub access token to POST /setup/device-complete
  * which resolves the user, checks app installation, and returns an API key.
  */
-async function completeWithServer(accessToken: string, repo?: string): Promise<DeviceCompleteResponse> {
+async function completeWithServer(accessToken: string, repo?: string, termsVersion?: string): Promise<DeviceCompleteResponse> {
   const url = getDeviceCompleteUrl();
-  const body: Record<string, string> = { access_token: accessToken };
+  const body: Record<string, string | boolean> = { access_token: accessToken };
   if (repo) {
     body.repo = repo;
+  }
+  if (termsVersion) {
+    body.terms_accepted = true;
+    body.terms_version = termsVersion;
   }
 
   const response = await fetch(url, {
@@ -278,9 +283,9 @@ export async function runDeviceFlow(spec: DeviceFlowSpec): Promise<DeviceFlowRes
 
   console.log('✓ GitHub authorization received\n');
 
-  // Step 5: Complete with Ceetrix server
+  // Step 5: Complete with Ceetrix server (include consent if provided)
   console.log('Completing setup...');
-  const result = await completeWithServer(accessToken, spec.repo);
+  const result = await completeWithServer(accessToken, spec.repo, spec.termsVersion);
 
   // Handle app-not-installed case
   if (result.install_url) {

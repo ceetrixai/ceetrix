@@ -10,10 +10,11 @@ import { openBrowser, canLaunchBrowser } from './browser.js';
 import { promptForRepo, promptExistingConfig, promptAgentWizard, AgentType } from './prompts.js';
 import { addConfig as addClaudeConfig, writeConfigToFile } from './claude.js';
 import { addConfig as addCodexConfig } from './codex.js';
-import { getSetupUrl, AUTH_TIMEOUT_MS, getMcpServerUrl, isCustomApiUrl, getAutoConfigPath } from './constants.js';
+import { getApiBaseUrl, getSetupUrl, AUTH_TIMEOUT_MS, getMcpServerUrl, isCustomApiUrl, getAutoConfigPath } from './constants.js';
 import { printDebugInfo } from './debug.js';
 import { enforceLatestVersion } from './version-check.js';
 import { requestPermissionOrExit } from './permissions.js';
+import { requestConsentOrExit, CURRENT_TERMS_VERSION } from './consent.js';
 import { runDeviceFlow } from './device-flow.js';
 
 /** CLI context for debug/diagnostics */
@@ -89,6 +90,9 @@ export async function main(): Promise<void> {
   if (!cliContext.configPath) {
     await requestPermissionOrExit();
   }
+
+  // T&C consent (Story 463) — required before proceeding
+  await requestConsentOrExit();
 
   // Detect available agents and their config status (skip if using custom config)
   let selectedAgents: AgentType[] = ['claude'];
@@ -228,7 +232,7 @@ async function handleExistingConfig(): Promise<'cancel' | 'done' | 'continue'> {
  * @param agents - Which agents to configure
  */
 async function runDeviceSetupFlow(repo: string, configPath: string | null, agents: AgentType[]): Promise<void> {
-  const result = await runDeviceFlow({ repo });
+  const result = await runDeviceFlow({ repo, termsVersion: CURRENT_TERMS_VERSION });
 
   if (!result) {
     // User denied, code expired, or app not installed — messages already printed
@@ -302,10 +306,39 @@ async function runBrowserSetupFlow(repo: string, configPath: string | null, agen
       console.log('');
     }
 
+    // Record T&C consent via API (Story 463)
+    await recordConsentViaApi(result.apiKey);
+
     // Write config for each selected agent
     await writeConfig(result.apiKey, configPath, agents);
   } finally {
     close();
+  }
+}
+
+/**
+ * Record T&C consent via the API after browser-based auth (Story 463).
+ * Best-effort — logs warning on failure but does not block setup.
+ */
+async function recordConsentViaApi(apiKey: string): Promise<void> {
+  try {
+    const response = await fetch(`${getApiBaseUrl()}/api/v1/consent/accept`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': apiKey,
+      },
+      body: JSON.stringify({
+        terms_version: CURRENT_TERMS_VERSION,
+        source: 'cli',
+      }),
+    });
+    if (response.ok) {
+      console.log('✓ Terms accepted\n');
+    }
+  } catch {
+    // Non-fatal — consent can be recorded on next web login
+    console.log('⚠ Could not record consent. You may be prompted again on web login.\n');
   }
 }
 

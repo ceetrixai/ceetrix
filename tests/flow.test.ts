@@ -64,6 +64,12 @@ vi.mock('../src/device-flow.js', () => ({
   runDeviceFlow: vi.fn(),
 }));
 
+// Mock consent - auto-accept in tests (Story 463)
+vi.mock('../src/consent.js', () => ({
+  requestConsentOrExit: vi.fn().mockResolvedValue(undefined),
+  CURRENT_TERMS_VERSION: '2026-03-23',
+}));
+
 import { main } from '../src/index.js';
 import { detectGitRemote } from '../src/git.js';
 import { getAgentStatuses } from '../src/config.js';
@@ -236,8 +242,8 @@ describe('main flow', () => {
     );
     // Callback server should be closed before falling back
     expect(closeServer).toHaveBeenCalled();
-    // Device flow should be invoked with the repo
-    expect(mockRunDeviceFlow).toHaveBeenCalledWith({ repo: 'owner/repo' });
+    // Device flow should be invoked with repo and terms version
+    expect(mockRunDeviceFlow).toHaveBeenCalledWith({ repo: 'owner/repo', termsVersion: '2026-03-23' });
     // Config should be written with device flow result
     expect(mockAddConfig).toHaveBeenCalledWith('device_key');
   });
@@ -336,8 +342,8 @@ describe('device flow selection (Story 224)', () => {
     expect(mockConsoleLog).toHaveBeenCalledWith(
       expect.stringContaining('No display server detected')
     );
-    // Should call device flow with repo
-    expect(mockRunDeviceFlow).toHaveBeenCalledWith({ repo: 'owner/repo' });
+    // Should call device flow with repo and terms version
+    expect(mockRunDeviceFlow).toHaveBeenCalledWith({ repo: 'owner/repo', termsVersion: '2026-03-23' });
     expect(mockAddConfig).toHaveBeenCalledWith('headless_key');
   });
 

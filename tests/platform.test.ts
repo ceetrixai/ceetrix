@@ -60,6 +60,12 @@ vi.mock('../src/prompts.js', () => ({
   promptAgentWizard: vi.fn().mockResolvedValue(['claude']),
 }));
 
+// Mock consent - auto-accept in tests (Story 463)
+vi.mock('../src/consent.js', () => ({
+  requestConsentOrExit: vi.fn().mockResolvedValue(undefined),
+  CURRENT_TERMS_VERSION: '2026-03-23',
+}));
+
 describe('platform checks', () => {
   const originalPlatform = process.platform;
   let mockExit: ReturnType<typeof vi.spyOn>;
