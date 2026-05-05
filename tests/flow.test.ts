@@ -67,6 +67,7 @@ vi.mock('../src/device-flow.js', () => ({
 // Mock consent - auto-accept in tests (Story 463)
 vi.mock('../src/consent.js', () => ({
   requestConsentOrExit: vi.fn().mockResolvedValue(undefined),
+  getStoredConsentStatus: vi.fn().mockResolvedValue(null),
   CURRENT_TERMS_VERSION: '2026-03-23',
 }));
 
@@ -79,6 +80,7 @@ import { promptForRepo, promptExistingConfig, promptAgentWizard } from '../src/p
 import { addConfig } from '../src/claude.js';
 import { addConfig as addCodexConfig } from '../src/codex.js';
 import { runDeviceFlow } from '../src/device-flow.js';
+import { requestConsentOrExit, getStoredConsentStatus } from '../src/consent.js';
 
 const mockDetectGitRemote = vi.mocked(detectGitRemote);
 const mockGetAgentStatuses = vi.mocked(getAgentStatuses);
@@ -91,6 +93,8 @@ const mockPromptAgentWizard = vi.mocked(promptAgentWizard);
 const mockAddConfig = vi.mocked(addConfig);
 const mockAddCodexConfig = vi.mocked(addCodexConfig);
 const mockRunDeviceFlow = vi.mocked(runDeviceFlow);
+const mockRequestConsentOrExit = vi.mocked(requestConsentOrExit);
+const mockGetStoredConsentStatus = vi.mocked(getStoredConsentStatus);
 
 /** Helper: standard statuses where only Claude is detected and unconfigured */
 function claudeOnlyStatuses() {
@@ -119,6 +123,7 @@ describe('main flow', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetStoredConsentStatus.mockResolvedValue(null);
 
     // Default: browser available (most tests exercise browser flow)
     mockCanLaunchBrowser.mockReturnValue(true);
@@ -133,6 +138,7 @@ describe('main flow', () => {
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     mockConsoleLog.mockRestore();
     mockConsoleError.mockRestore();
     mockProcessExit.mockRestore();
@@ -259,6 +265,48 @@ describe('main flow', () => {
 
     expect(mockAddConfig).toHaveBeenCalledWith('my_api_key');
     expect(mockConsoleLog).toHaveBeenCalledWith('✓ Configuration added\n');
+  });
+
+  it('skips consent prompt when stored API key already accepted current terms', async () => {
+    mockGetAgentStatuses.mockResolvedValue(claudeOnlyStatuses());
+    mockGetStoredConsentStatus.mockResolvedValue({
+      acceptedCurrentVersion: true,
+      currentTermsVersion: '2026-03-23',
+    });
+    mockPromptAgentWizard.mockResolvedValue(['claude']);
+    mockDetectGitRemote.mockResolvedValue({ status: 'detected', repo: 'owner/repo' });
+    setupBrowserFlow(closeServer, 'my_api_key');
+    mockAddConfig.mockResolvedValue(undefined);
+
+    await main();
+
+    expect(mockRequestConsentOrExit).not.toHaveBeenCalled();
+    expect(mockConsoleLog).toHaveBeenCalledWith('✓ Terms already accepted\n');
+  });
+
+  it('uses server terms version when consent must be recorded again', async () => {
+    mockCanLaunchBrowser.mockReturnValue(false);
+    mockGetAgentStatuses.mockResolvedValue(claudeOnlyStatuses());
+    mockGetStoredConsentStatus.mockResolvedValue({
+      acceptedCurrentVersion: false,
+      currentTermsVersion: '2026-04-01',
+    });
+    mockPromptAgentWizard.mockResolvedValue(['claude']);
+    mockDetectGitRemote.mockResolvedValue({ status: 'detected', repo: 'owner/repo' });
+    mockRunDeviceFlow.mockResolvedValue({
+      apiKey: 'device_key',
+      username: 'testuser',
+      repos: ['owner/repo'],
+    });
+    mockAddConfig.mockResolvedValue(undefined);
+
+    await main();
+
+    expect(mockRequestConsentOrExit).toHaveBeenCalled();
+    expect(mockRunDeviceFlow).toHaveBeenCalledWith({
+      repo: 'owner/repo',
+      termsVersion: '2026-04-01',
+    });
   });
 
   it('closes server after completion', async () => {

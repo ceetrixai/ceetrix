@@ -14,7 +14,11 @@ import { getApiBaseUrl, getSetupUrl, AUTH_TIMEOUT_MS, getMcpServerUrl, isCustomA
 import { printDebugInfo } from './debug.js';
 import { enforceLatestVersion } from './version-check.js';
 import { requestPermissionOrExit } from './permissions.js';
-import { requestConsentOrExit, CURRENT_TERMS_VERSION } from './consent.js';
+import {
+  requestConsentOrExit,
+  CURRENT_TERMS_VERSION,
+  getStoredConsentStatus,
+} from './consent.js';
 import { runDeviceFlow } from './device-flow.js';
 
 /** CLI context for debug/diagnostics */
@@ -44,6 +48,13 @@ function parseArgs(): CliContext {
 
 /** Supported platforms for this release */
 const SUPPORTED_PLATFORMS = ['darwin', 'linux'];
+
+interface SetupFlowSpec {
+  repo: string;
+  configPath: string | null;
+  agents: AgentType[];
+  termsVersion: string;
+}
 
 /**
  * Main CLI entry point
@@ -91,8 +102,25 @@ export async function main(): Promise<void> {
     await requestPermissionOrExit();
   }
 
-  // T&C consent (Story 463) — required before proceeding
-  await requestConsentOrExit();
+  let termsVersion = CURRENT_TERMS_VERSION;
+  const storedConsent = await getStoredConsentStatus(cliContext.configPath);
+  if (storedConsent) {
+    termsVersion = storedConsent.currentTermsVersion;
+
+    if (storedConsent.warning) {
+      console.log(`⚠ ${storedConsent.warning}\n`);
+    }
+
+    if (storedConsent.acceptedCurrentVersion) {
+      console.log('✓ Terms already accepted\n');
+    } else {
+      // T&C consent (Story 463) — required before proceeding
+      await requestConsentOrExit();
+    }
+  } else {
+    // T&C consent (Story 463) — required before proceeding
+    await requestConsentOrExit();
+  }
 
   // Detect available agents and their config status (skip if using custom config)
   let selectedAgents: AgentType[] = ['claude'];
@@ -171,9 +199,19 @@ export async function main(): Promise<void> {
     if (!cliContext.noBrowser) {
       console.log('No display server detected. Using device code authentication.\n');
     }
-    await runDeviceSetupFlow(repo, cliContext.configPath, selectedAgents);
+    await runDeviceSetupFlow({
+      repo,
+      configPath: cliContext.configPath,
+      agents: selectedAgents,
+      termsVersion,
+    });
   } else {
-    await runBrowserSetupFlow(repo, cliContext.configPath, selectedAgents);
+    await runBrowserSetupFlow({
+      repo,
+      configPath: cliContext.configPath,
+      agents: selectedAgents,
+      termsVersion,
+    });
   }
 }
 
@@ -231,8 +269,11 @@ async function handleExistingConfig(): Promise<'cancel' | 'done' | 'continue'> {
  * @param configPath - Optional custom config file path (null = use agent's default config)
  * @param agents - Which agents to configure
  */
-async function runDeviceSetupFlow(repo: string, configPath: string | null, agents: AgentType[]): Promise<void> {
-  const result = await runDeviceFlow({ repo, termsVersion: CURRENT_TERMS_VERSION });
+async function runDeviceSetupFlow(spec: SetupFlowSpec): Promise<void> {
+  const result = await runDeviceFlow({
+    repo: spec.repo,
+    termsVersion: spec.termsVersion,
+  });
 
   if (!result) {
     // User denied, code expired, or app not installed — messages already printed
@@ -248,7 +289,7 @@ async function runDeviceSetupFlow(repo: string, configPath: string | null, agent
   }
 
   // Write config for each selected agent
-  await writeConfig(result.apiKey, configPath, agents);
+  await writeConfig(result.apiKey, spec.configPath, spec.agents);
 }
 
 /**
@@ -261,14 +302,14 @@ async function runDeviceSetupFlow(repo: string, configPath: string | null, agent
  * @param configPath - Optional custom config file path (null = use agent's default config)
  * @param agents - Which agents to configure
  */
-async function runBrowserSetupFlow(repo: string, configPath: string | null, agents: AgentType[]): Promise<void> {
+async function runBrowserSetupFlow(spec: SetupFlowSpec): Promise<void> {
   // Start callback server
   const { port, waitForCallback, close } = await startCallbackServer();
 
   try {
     // Build setup URL
     const callbackUrl = `http://localhost:${port}/callback`;
-    const setupUrl = `${getSetupUrl()}?callback=${encodeURIComponent(callbackUrl)}&repo=${encodeURIComponent(repo)}`;
+    const setupUrl = `${getSetupUrl()}?callback=${encodeURIComponent(callbackUrl)}&repo=${encodeURIComponent(spec.repo)}`;
 
     // Try to open browser
     const opened = await openBrowser(setupUrl);
@@ -276,7 +317,7 @@ async function runBrowserSetupFlow(repo: string, configPath: string | null, agen
       // Browser failed — fall back to device flow explicitly (not silently)
       close();
       console.log('Could not open browser. Switching to device code authentication.\n');
-      await runDeviceSetupFlow(repo, configPath, agents);
+      await runDeviceSetupFlow(spec);
       return;
     }
 
@@ -307,10 +348,10 @@ async function runBrowserSetupFlow(repo: string, configPath: string | null, agen
     }
 
     // Record T&C consent via API (Story 463)
-    await recordConsentViaApi(result.apiKey);
+    await recordConsentViaApi(result.apiKey, spec.termsVersion);
 
     // Write config for each selected agent
-    await writeConfig(result.apiKey, configPath, agents);
+    await writeConfig(result.apiKey, spec.configPath, spec.agents);
   } finally {
     close();
   }
@@ -320,7 +361,7 @@ async function runBrowserSetupFlow(repo: string, configPath: string | null, agen
  * Record T&C consent via the API after browser-based auth (Story 463).
  * Best-effort — logs warning on failure but does not block setup.
  */
-async function recordConsentViaApi(apiKey: string): Promise<void> {
+async function recordConsentViaApi(apiKey: string, termsVersion: string): Promise<void> {
   try {
     const response = await fetch(`${getApiBaseUrl()}/api/v1/consent/accept`, {
       method: 'POST',
@@ -329,7 +370,7 @@ async function recordConsentViaApi(apiKey: string): Promise<void> {
         'X-API-Key': apiKey,
       },
       body: JSON.stringify({
-        terms_version: CURRENT_TERMS_VERSION,
+        terms_version: termsVersion,
         source: 'cli',
       }),
     });
