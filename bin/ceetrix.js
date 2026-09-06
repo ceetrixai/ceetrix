@@ -14,8 +14,13 @@ if (args.includes('--debug') || args.includes('-d')) {
 } else {
   main()
     .then(() => {
-      // @inquirer/prompts leaves stdin open - unref it so Node can exit
-      process.stdin.unref();
+      // @inquirer/prompts leaves stdin open - unref it so Node can exit.
+      // Guarded: stdin is not always a stream with unref (a pipe or file in a
+      // non-interactive run has none), and an exception here would replace a
+      // deliberate exit status with 1.
+      if (typeof process.stdin.unref === 'function') {
+        process.stdin.unref();
+      }
     })
     .catch((err) => {
       console.error(err.message);

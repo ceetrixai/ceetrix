@@ -14,6 +14,7 @@ import { getApiBaseUrl, getSetupUrl, AUTH_TIMEOUT_MS, getMcpServerUrl, isCustomA
 import { printDebugInfo } from './debug.js';
 import { enforceLatestVersion } from './version-check.js';
 import { requestPermissionOrExit } from './permissions.js';
+import { runCheckCommit } from './commit-check.js';
 import {
   requestConsentOrExit,
   CURRENT_TERMS_VERSION,
@@ -60,6 +61,17 @@ interface SetupFlowSpec {
  * Main CLI entry point
  */
 export async function main(): Promise<void> {
+  const rawArgs = process.argv.slice(2);
+
+  // Story 489: answer whether a recorded commit is reachable from here.
+  // Handled before anything else, and deliberately before the permission
+  // prompt: this reads one repository, writes nothing, needs no network, and
+  // must work non-interactively.
+  if (rawArgs[0] === 'check-commit') {
+    process.exitCode = await runCheckCommit(rawArgs.slice(1));
+    return;
+  }
+
   const cliContext = parseArgs();
 
   // Handle --debug flag

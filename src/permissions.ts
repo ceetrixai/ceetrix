@@ -19,6 +19,7 @@ const COMMANDS_DESCRIPTION = `
 • claude mcp add        (add Ceetrix to Claude)
 • claude mcp remove     (if reconfiguring Claude)
 • Read/write ~/.codex/config.toml (Codex config)
+• git rev-parse / git cat-file  (check a commit is present, read only)
 `;
 
 /**
