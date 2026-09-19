@@ -109,25 +109,14 @@ describe('omp add', () => {
     expect(entry).not.toHaveProperty('args');
   });
 
-  it('writes the schema reference into a file it creates', async () => {
+  it('writes no schema reference, because it could not be removed again', async () => {
+    // A $schema key would survive removal, so the file would survive with it,
+    // and a harness that had no config before would not be left as it was
+    // found. Task 547.13.
     const { harness, getConfigPath } = await loadOmp();
     await harness.add({ apiKey: TEST_KEY, url: TEST_URL });
 
-    expect((await readConfig(getConfigPath())).$schema).toContain('mcp-schema.json');
-  });
-
-  it('adds no schema reference to a file that already existed', async () => {
-    // Removal takes out the ceetrix entry and cannot tell whether a $schema
-    // key was the person's or ours, so introducing one into someone else's
-    // file would make add-then-remove non-restoring.
-    const { harness, getConfigPath } = await loadOmp();
-    const path = getConfigPath();
-    await mkdir(join(tempHome, '.omp', 'agent'), { recursive: true });
-    await writeFile(path, JSON.stringify({ mcpServers: {} }), 'utf-8');
-
-    await harness.add({ apiKey: TEST_KEY, url: TEST_URL });
-
-    expect(await readConfig(path)).not.toHaveProperty('$schema');
+    expect(await readConfig(getConfigPath())).not.toHaveProperty('$schema');
   });
 
   it('preserves an unrelated server already in the file', async () => {
@@ -195,6 +184,16 @@ describe('omp remove', () => {
   it('is a no-op when nothing was ever written', async () => {
     const { harness, getConfigPath } = await loadOmp();
     await harness.remove();
+    await expect(readFile(getConfigPath(), 'utf-8')).rejects.toThrow();
+  });
+
+  it('leaves no file behind where none existed before add', async () => {
+    // The round trip on a machine that had no omp MCP config at all. This is
+    // the case the 547.2 tests missed, found by running the real harness.
+    const { harness, getConfigPath } = await loadOmp();
+    await harness.add({ apiKey: TEST_KEY, url: TEST_URL });
+    await harness.remove();
+
     await expect(readFile(getConfigPath(), 'utf-8')).rejects.toThrow();
   });
 });

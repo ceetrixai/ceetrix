@@ -85,9 +85,16 @@ const OMP_MCP_FILE = 'mcp.json';
 /** Top-level key holding the server map. */
 const OMP_CONTAINER_KEY = 'mcpServers';
 
-/** Schema URL omp writes into files it manages, added here for editor support. */
-const OMP_SCHEMA_URL =
-  'https://raw.githubusercontent.com/can1357/oh-my-pi/main/packages/coding-agent/src/config/mcp-schema.json';
+/*
+ * No $schema reference is written.
+ *
+ * omp writes one itself into files it manages, and it is only editor
+ * convenience. Ceetrix cannot distinguish a $schema it wrote from one the
+ * person wrote, so any rule for removing it again would be a guess — and a key
+ * that cannot be cleanly taken back leaves removal unable to restore the file,
+ * which is what task 547.13 was raised for. A key we will not remove does not
+ * go into someone else's file.
+ */
 
 const binary = cachedBinary({
   command: OMP_COMMAND,
@@ -157,23 +164,11 @@ export const harness = {
     }),
 
   add: async (spec: HarnessAddSpec) => {
-    const filePath = getConfigPath();
-
-    // The schema reference is editor convenience, and omp writes it itself
-    // into files it manages. Ceetrix adds it only to a file it is creating.
-    // Adding it to a file that already existed would break the requirement
-    // that removal leaves the settings as they were: remove() takes out the
-    // ceetrix entry and has no basis for deciding whether a $schema key was
-    // the person's or ours, so the honest move is never to introduce one into
-    // someone else's file.
-    const creating = !(await fileExists(filePath));
-
     await writeMcpEntry({
-      filePath,
+      filePath: getConfigPath(),
       containerKey: OMP_CONTAINER_KEY,
       serverName: CEETRIX_MCP_SERVER_NAME,
       entry: buildEntry(spec),
-      defaultTopLevel: creating ? { $schema: OMP_SCHEMA_URL } : undefined,
     });
   },
 

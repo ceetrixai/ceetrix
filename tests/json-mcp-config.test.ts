@@ -121,33 +121,6 @@ describe('writeMcpEntry', () => {
     expect((await stat(configPath)).mode & 0o777).toBe(0o644);
   });
 
-  it('applies defaultTopLevel only when the key is absent', async () => {
-    const schema = 'https://example.com/schema.json';
-
-    await writeMcpEntry({
-      filePath: configPath,
-      containerKey: 'mcpServers',
-      serverName: SERVER_NAME,
-      entry,
-      defaultTopLevel: { $schema: schema },
-    });
-    expect((await readBack()).$schema).toBe(schema);
-
-    await writeFile(
-      configPath,
-      JSON.stringify({ $schema: 'user-chose-this', mcpServers: {} }),
-      'utf-8'
-    );
-    await writeMcpEntry({
-      filePath: configPath,
-      containerKey: 'mcpServers',
-      serverName: SERVER_NAME,
-      entry,
-      defaultTopLevel: { $schema: schema },
-    });
-    expect((await readBack()).$schema).toBe('user-chose-this');
-  });
-
   it('refuses to overwrite a file that exists but does not parse', async () => {
     await writeFile(configPath, '{ this is not json', 'utf-8');
 
@@ -257,6 +230,63 @@ describe('removeMcpEntry', () => {
     const config = await readBack();
     expect(config.mcpServers).toEqual({ other: { url: 'https://other' } });
     expect(config.model).toBe('keep-me');
+  });
+
+  it('deletes a file it emptied, leaving the harness as it was found', async () => {
+    // Connecting a harness that had no settings file and then disconnecting it
+    // must leave nothing behind. Found by running the real pi harness, where
+    // removal left {"mcpServers": {}} where no file had existed (task 547.13).
+    await writeMcpEntry({
+      filePath: configPath,
+      containerKey: 'mcpServers',
+      serverName: SERVER_NAME,
+      entry,
+    });
+    expect(await fileExists(configPath)).toBe(true);
+
+    await removeMcpEntry({
+      filePath: configPath,
+      containerKey: 'mcpServers',
+      serverName: SERVER_NAME,
+    });
+
+    expect(await fileExists(configPath)).toBe(false);
+  });
+
+  it('keeps the file when another server survives', async () => {
+    await writeFile(
+      configPath,
+      JSON.stringify({ mcpServers: { other: { url: 'https://other' }, [SERVER_NAME]: entry } }),
+      'utf-8'
+    );
+
+    await removeMcpEntry({
+      filePath: configPath,
+      containerKey: 'mcpServers',
+      serverName: SERVER_NAME,
+    });
+
+    expect(await fileExists(configPath)).toBe(true);
+    expect((await readBack()).mcpServers).toEqual({ other: { url: 'https://other' } });
+  });
+
+  it('keeps the file when any other top-level setting survives', async () => {
+    // Ceetrix cannot tell a file it created from one the person created and
+    // then emptied, so anything else present means the file stays.
+    await writeFile(
+      configPath,
+      JSON.stringify({ model: 'theirs', mcpServers: { [SERVER_NAME]: entry } }),
+      'utf-8'
+    );
+
+    await removeMcpEntry({
+      filePath: configPath,
+      containerKey: 'mcpServers',
+      serverName: SERVER_NAME,
+    });
+
+    expect(await fileExists(configPath)).toBe(true);
+    expect((await readBack()).model).toBe('theirs');
   });
 
   it('is a no-op on a missing file and does not create one', async () => {

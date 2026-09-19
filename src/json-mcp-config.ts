@@ -13,7 +13,7 @@
  * opencode), and the shape of the entry itself.
  */
 
-import { readFile, writeFile, mkdir, stat } from 'fs/promises';
+import { readFile, writeFile, mkdir, stat, rm } from 'fs/promises';
 import { dirname } from 'path';
 
 /**
@@ -38,17 +38,18 @@ export interface McpContainerSpec {
   serverName: string;
 }
 
-/** A write into one harness's config file. */
+/**
+ * A write into one harness's config file.
+ *
+ * There is deliberately no way to set extra top-level keys. An earlier version
+ * allowed it, for a `$schema` reference, and that is what made removal unable
+ * to restore a file Ceetrix had created: the key survived, so the file did
+ * (task 547.13). Anything Ceetrix writes into someone else's settings has to be
+ * something it can also take back.
+ */
 export interface McpEntrySpec extends McpContainerSpec {
   /** The server entry to store under `serverName`. */
   entry: Record<string, unknown>;
-  /**
-   * Top-level keys to set alongside the container, such as `$schema`.
-   *
-   * Applied only when absent, so a user who removed or changed one is not
-   * overruled on every re-run.
-   */
-  defaultTopLevel?: Record<string, unknown>;
 }
 
 /** A parsed config file, or an empty object when there was nothing to parse. */
@@ -142,16 +143,10 @@ function readContainer(config: JsonConfig, containerKey: string): Record<string,
 /**
  * Add or replace the Ceetrix entry, preserving everything else in the file.
  *
- * @param spec - File, container key, server name, entry and default top-level keys
+ * @param spec - File, container key, server name and entry
  */
 export async function writeMcpEntry(spec: McpEntrySpec): Promise<void> {
   const config = await readConfig(spec.filePath);
-
-  for (const [key, value] of Object.entries(spec.defaultTopLevel ?? {})) {
-    if (!(key in config)) {
-      config[key] = value;
-    }
-  }
 
   config[spec.containerKey] = {
     ...readContainer(config, spec.containerKey),
@@ -200,5 +195,35 @@ export async function removeMcpEntry(spec: McpContainerSpec): Promise<void> {
   delete container[spec.serverName];
   config[spec.containerKey] = container;
 
+  // Where nothing of the person's is left, remove the file rather than leaving
+  // an empty shell behind. Connecting a harness that had no settings file at
+  // all and then disconnecting it must leave the harness as it was found, and
+  // a stray file is inert but it is not nothing.
+  //
+  // Deliberately conservative: this triggers only when the container is empty
+  // AND it is the sole top-level key. A file that still holds another server,
+  // or any other setting, is written back and kept — Ceetrix cannot tell a
+  // file it created from one the person created and then emptied, so the only
+  // safe rule is to delete when literally nothing remains.
+  if (isEmptyConfig(config, spec.containerKey)) {
+    await rm(spec.filePath, { force: true });
+    return;
+  }
+
   await writeConfig(spec.filePath, config);
+}
+
+/**
+ * Does this config still hold anything of the person's?
+ *
+ * @param config - The parsed config after our entry was removed
+ * @param containerKey - Top-level key holding the server map
+ * @returns true when the container is empty and is the only top-level key
+ */
+function isEmptyConfig(config: JsonConfig, containerKey: string): boolean {
+  const keys = Object.keys(config);
+  if (keys.length !== 1 || keys[0] !== containerKey) {
+    return false;
+  }
+  return Object.keys(readContainer(config, containerKey)).length === 0;
 }
