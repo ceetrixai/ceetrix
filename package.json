@@ -1,7 +1,7 @@
 {
   "name": "ceetrix",
   "version": "1.1.1",
-  "description": "Set up Ceetrix backlog management for Claude Code and OpenAI Codex",
+  "description": "Connect your coding agent to Ceetrix backlog management - Claude Code, Codex, pi, omp, OpenCode or DeepSeek Harness",
   "bin": {
     "ceetrix": "./bin/ceetrix.js"
   },
@@ -41,12 +41,16 @@
   ],
   "keywords": [
     "ceetrix",
-    "claude",
+    "mcp",
+    "backlog",
     "claude-code",
     "codex",
-    "openai",
-    "mcp",
-    "backlog"
+    "pi",
+    "omp",
+    "oh-my-pi",
+    "opencode",
+    "deepseek-harness",
+    "coding-agent"
   ],
   "license": "MIT",
   "repository": {
