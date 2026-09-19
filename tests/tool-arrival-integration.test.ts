@@ -1,27 +1,29 @@
 /**
- * Do Ceetrix's tools actually reach the model?
+ * Do Ceetrix's tools actually reach the model, and can the model use them?
  *
  * Every other suite in this story stops at registration: the settings file is
  * correct, the server is listed, the plugin is mounted. None of that proves a
  * model can call a Ceetrix tool, which is the only thing a user cares about.
  *
- * An earlier version of this work claimed that gap could not be closed for pi
+ * Two layers here. The read layer asks each agent to run Ceetrix's search and
+ * assert a real result comes back. The write layer asks it to create a comment
+ * and then reads that comment back over a separate MCP connection — because an
+ * agent reporting success is not evidence. In the manual runs that preceded
+ * this file, all four reported success before anything had been confirmed.
+ *
+ * Everything targets STAGING. These cases write, and a suite that posts to the
+ * operator's real project on every run is not acceptable. There is no fallback
+ * to production: without a staging credential the cases skip.
+ *
+ * An earlier version of this work claimed the gap could not be closed for pi
  * and omp, because neither has an `mcp` subcommand that lists servers. That was
  * wrong, and this file is the retraction: the absence of a listing subcommand
- * is not the absence of a way to check. All four agents have a non-interactive
- * print mode, which is enough to make the model call a tool and read the reply.
- *
- * Each case configures the agent in a sandbox, asks it to run Ceetrix's search
- * against this repository, and asserts the real result comes back. A model
- * cannot fabricate the match count for a query it never ran — and all four were
- * observed returning the same number independently, which is what makes the
- * assertion meaningful rather than a coincidence of phrasing.
- *
- * These cost a model call each, so they skip unless a credential is present.
+ * is not the absence of a way to check. All four have a non-interactive print
+ * mode, which is enough to make the model call a tool and read the reply.
  */
 
 import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, cp, mkdir, copyFile, writeFile } from 'fs/promises';
+import { mkdtemp, rm, cp, mkdir, copyFile, writeFile, readFile } from 'fs/promises';
 import { tmpdir, homedir } from 'os';
 import { join } from 'path';
 import { spawn } from 'child_process';
@@ -29,26 +31,107 @@ import which from 'which';
 import { fileExists } from '../src/json-mcp-config.js';
 
 /**
+ * A model call plus an MCP round trip.
+ *
+ * Observed runs land around five to ten seconds per harness, so five minutes is
+ * headroom rather than an expectation. It is deliberately not larger: a hung
+ * agent should fail the case, not hold the suite for a quarter of an hour.
+ */
+const MODEL_TIMEOUT_MS = 300000;
+
+/** How long the direct read-back may take. No model involved, so short. */
+const MCP_TIMEOUT_MS = 30000;
+
+/** Provider and model used for the prompt. Cheap, fast, and tool-capable. */
+const TEST_PROVIDER = 'cerebras';
+const TEST_MODEL = 'gpt-oss-120b';
+
+/** Environment variable holding the model credential. */
+const MODEL_KEY_ENV = 'CEREBRAS_API_KEY';
+
+/** The repository the agent is asked to work against. */
+const TEST_REMOTE = 'git@github.com:boxabirds/claude-backlog.git';
+
+/**
+ * Staging, never production.
+ *
+ * There is deliberately NO fallback to production: when the staging credential
+ * is absent the cases skip with a printed reason, because a test that silently
+ * writes somewhere it was not pointed is worse than one that does not run.
+ */
+const STAGING_MCP_URL = 'https://staging-api.ceetrix.com/mcp';
+
+/**
+ * Where the installer puts the credential for a custom API URL.
+ *
+ * Derived the way getAutoConfigPath does: the host with dots and colons
+ * replaced by dashes. Reading it rather than hardcoding a key keeps secrets out
+ * of the repository.
+ */
+const STAGING_CONFIG = '.claude-ceetrix-staging-api-ceetrix-com.json';
+
+/** The staging story these cases comment on. */
+const STAGING_STORY_ID = '296';
+
+/** The search query. Its result is large and stable enough to assert on. */
+const TEST_QUERY = 'harness';
+
+/**
+ * The read prompt, per agent.
+ *
+ * pi reaches Ceetrix through the adapter's proxy tool rather than directly
+ * named tools, so it is told to name the server and the tool. Instructing the
+ * others that way would test a path they do not have. This is the only place
+ * the agents genuinely need different words.
+ *
+ * @param agent - Which harness
+ * @returns The prompt
+ */
+function readPrompt(agent: string): string {
+  const task =
+    `the ceetrix search tool with query '${TEST_QUERY}' and remote_url ` +
+    `'${TEST_REMOTE}'. Report only the number of matches.`;
+  return agent === 'pi'
+    ? `Use the mcp tool with server 'ceetrix' and tool 'search' to call ${task}`
+    : `Call ${task}`;
+}
+
+/** Pulls the count out of Ceetrix's "Found N matches for ..." reply. */
+const FOUND_COUNT = /Found\s+(\d+)\s+match/i;
+
+let stagingKey: string | null = null;
+let sandbox: string;
+
+/**
  * Run an agent non-interactively and return everything it printed.
  *
  * Uses spawn with stdin IGNORED rather than execFile. That is not a style
- * preference: execFile leaves stdin as an open pipe, and these agents wait on
- * it, so every case hung until its timeout even though the identical command
- * completes in about seven seconds from a shell. The symptom was a suite that
- * looked slow rather than broken, which is the worst way for it to fail.
+ * preference: execFile leaves stdin as an open pipe and these agents wait on
+ * it, so every case hung until its timeout although the identical command
+ * completes in seconds from a shell. The symptom was a suite that looked slow
+ * rather than broken, which is the worst way for one to fail.
+ *
+ * Runs in an empty sandbox directory rather than the repository. These agents
+ * read instruction files from their working directory, so running them here
+ * pulled this project's CLAUDE.md into every prompt — which showed up as a
+ * model reciting this repository's agent-disclosure text instead of answering,
+ * and contributed to one agent intermittently not calling the tool at all. A
+ * test should not inherit the repository it happens to be launched from.
  *
  * @param binary - Absolute path to the agent
  * @param args - Arguments
  * @param env - Environment overrides
+ * @param cwd - Working directory for the agent
  * @returns Combined stdout and stderr
  */
 function runAgent(
   binary: string,
   args: string[],
-  env: NodeJS.ProcessEnv
+  env: NodeJS.ProcessEnv,
+  cwd: string
 ): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(binary, args, { env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(binary, args, { env, cwd, stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '';
     const collect = (chunk: Buffer) => {
       output += chunk.toString();
@@ -73,63 +156,120 @@ function runAgent(
 }
 
 /**
- * A model call plus an MCP round trip.
+ * Read the STAGING credential the installer wrote to its side config.
  *
- * Observed runs land between roughly thirty seconds and three minutes per
- * harness, so five minutes is headroom rather than an expectation. It is
- * deliberately not larger: a hung agent should fail the case, not hold the
- * suite for a quarter of an hour.
- */
-const MODEL_TIMEOUT_MS = 300000;
-
-/** Provider and model used for the prompt. Cheap, fast, and tool-capable. */
-const TEST_PROVIDER = 'cerebras';
-const TEST_MODEL = 'gpt-oss-120b';
-
-/** Environment variable holding the model credential. */
-const MODEL_KEY_ENV = 'CEREBRAS_API_KEY';
-
-/** The repository the agent is asked to search. */
-const TEST_REMOTE = 'git@github.com:boxabirds/claude-backlog.git';
-
-/** The query. Chosen because its result is large and stable enough to assert on. */
-const TEST_QUERY = 'harness';
-
-/**
- * The prompt. Deliberately explicit: the point is to test whether the tool is
- * reachable, not whether a small model can infer that it should use one.
- */
-const PROMPT =
-  `Call the ceetrix search tool with query '${TEST_QUERY}' and remote_url ` +
-  `'${TEST_REMOTE}'. Report only the number of matches.`;
-
-/**
- * What a real reply looks like.
+ * Never reads the production credential. When this returns null the cases skip
+ * rather than reaching for ~/.claude.json instead.
  *
- * Ceetrix answers with "Found N matches for ...". Asserting on the digits alone
- * would pass on a fabricated number, so the assertion requires a plausible
- * count AND that the agent did not report an error instead.
+ * @returns The staging key, or null when staging has never been set up here
  */
-const MATCH_PATTERN = /\b(\d{2,5})\b/;
-
-let ceetrixKey: string | null = null;
-let sandbox: string;
-
-/**
- * Read the developer's Ceetrix credential, which the agents need in order to
- * reach the live server.
- *
- * @returns The key, or null when Claude Code is not configured here
- */
-async function readCeetrixKey(): Promise<string | null> {
-  const claudeConfig = join(homedir(), '.claude.json');
-  if (!(await fileExists(claudeConfig))) return null;
+async function readStagingKey(): Promise<string | null> {
+  const config = join(homedir(), STAGING_CONFIG);
+  if (!(await fileExists(config))) return null;
   try {
-    const parsed = JSON.parse(await (await import('fs/promises')).readFile(claudeConfig, 'utf-8'));
+    const parsed = JSON.parse(await readFile(config, 'utf-8'));
     return parsed?.mcpServers?.ceetrix?.headers?.['X-API-Key'] ?? null;
   } catch {
     return null;
   }
+}
+
+/**
+ * A comment body unique to this run and this agent.
+ *
+ * Comments accumulate on the staging story, so each carries its origin and
+ * timestamp: an accumulation is then explicable rather than mysterious, and the
+ * read-back finds this run's comment rather than one from an earlier run.
+ *
+ * @param agent - Which harness wrote it
+ * @returns The comment body
+ */
+function writeMarker(agent: string): string {
+  return `tool-arrival write check from ${agent} at ${new Date().toISOString()}`;
+}
+
+/**
+ * Parse a streamable-HTTP reply, which may arrive as JSON or as SSE frames.
+ *
+ * @param body - Raw response text
+ * @returns The first JSON-RPC result carrying tool content, or null
+ */
+function parseMcpReply(body: string): string | null {
+  for (const line of body.split('\n')) {
+    const payload = line.startsWith('data:') ? line.slice(5).trim() : line.trim();
+    if (!payload.startsWith('{')) continue;
+    try {
+      const parsed = JSON.parse(payload);
+      const content = parsed?.result?.content;
+      if (Array.isArray(content)) {
+        return content.map((c: { text?: string }) => c.text ?? '').join('');
+      }
+    } catch {
+      // Not a complete JSON frame; keep scanning.
+    }
+  }
+  return null;
+}
+
+/**
+ * Call one Ceetrix tool directly over MCP, independent of any agent.
+ *
+ * This is what makes the write layer evidence rather than hearsay: the reply
+ * comes from the server over a connection the agent had nothing to do with.
+ *
+ * @param tool - Tool name
+ * @param args - Tool arguments
+ * @returns The tool's text output
+ * @throws Error when the handshake or the call fails
+ */
+async function callCeetrixDirectly(tool: string, args: Record<string, unknown>): Promise<string> {
+  const headers = {
+    'X-API-Key': stagingKey!,
+    'Content-Type': 'application/json',
+    Accept: 'application/json, text/event-stream',
+  };
+
+  const init = await fetch(STAGING_MCP_URL, {
+    method: 'POST',
+    headers,
+    signal: AbortSignal.timeout(MCP_TIMEOUT_MS),
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2024-11-05',
+        capabilities: {},
+        clientInfo: { name: 'tool-arrival-verify', version: '0' },
+      },
+    }),
+  });
+  const session = init.headers.get('mcp-session-id');
+  if (!session) throw new Error('staging did not return an MCP session id');
+
+  const withSession = { ...headers, 'mcp-session-id': session };
+  await fetch(STAGING_MCP_URL, {
+    method: 'POST',
+    headers: withSession,
+    signal: AbortSignal.timeout(MCP_TIMEOUT_MS),
+    body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }),
+  });
+
+  const call = await fetch(STAGING_MCP_URL, {
+    method: 'POST',
+    headers: withSession,
+    signal: AbortSignal.timeout(MCP_TIMEOUT_MS),
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: { name: tool, arguments: args },
+    }),
+  });
+
+  const text = parseMcpReply(await call.text());
+  if (text === null) throw new Error(`staging returned no content for ${tool}`);
+  return text;
 }
 
 /**
@@ -162,43 +302,42 @@ function canRun(binary: string | null, name: string): boolean {
     console.log(`Skipping ${name}: ${MODEL_KEY_ENV} not set, and this case needs a model`);
     return false;
   }
-  if (!ceetrixKey) {
-    console.log(`Skipping ${name}: no Ceetrix credential found in ~/.claude.json`);
+  if (!stagingKey) {
+    console.log(
+      `Skipping ${name}: no staging credential at ~/${STAGING_CONFIG}. ` +
+        `Create one by running setup with CEETRIX_API_URL=https://staging-api.ceetrix.com`
+    );
     return false;
   }
   return true;
 }
 
-/**
- * Assert that a reply carries a real search result rather than a failure.
- *
- * @param output - What the agent printed
- * @param agent - Agent name, for the failure message
- */
-function expectRealResult(output: string, agent: string): void {
-  expect(output.toLowerCase(), `${agent} reported an error instead of a result`).not.toMatch(
-    /no project context|failed to connect|tool not found|unable to connect/
-  );
-  expect(output, `${agent} returned no match count`).toMatch(MATCH_PATTERN);
+/** Everything a case needs to drive one agent in the sandbox. */
+interface AgentRunner {
+  /** Environment that points the agent at the sandbox. */
+  env: NodeJS.ProcessEnv;
+  /** Turn a prompt into that agent's non-interactive argument list. */
+  args: (prompt: string) => string[];
+  /** Empty directory to run in, so no project instruction files are read. */
+  cwd: string;
 }
 
-beforeAll(async () => {
-  ceetrixKey = await readCeetrixKey();
-});
+/**
+ * Configure one agent inside the sandbox, pointed at staging.
+ *
+ * Each agent is isolated by a different variable, which is the only real
+ * difference between them: the registry means `add` is the same call for all.
+ *
+ * @param agent - Which harness
+ * @returns How to run it
+ */
+async function configureAgent(agent: 'opencode' | 'pi' | 'omp' | 'dsh'): Promise<AgentRunner> {
+  const spec = { apiKey: stagingKey!, url: STAGING_MCP_URL };
+  // An empty directory with no instruction files and no git repository.
+  const workdir = join(sandbox, 'work');
+  await mkdir(workdir, { recursive: true });
 
-beforeEach(async () => {
-  sandbox = await mkdtemp(join(tmpdir(), 'ceetrix-tool-arrival-'));
-});
-
-afterEach(async () => {
-  await rm(sandbox, { recursive: true, force: true });
-});
-
-describe('the model can call a Ceetrix tool', () => {
-  it('OpenCode', async () => {
-    const binary = await find('opencode');
-    if (!canRun(binary, 'OpenCode')) return;
-
+  if (agent === 'opencode') {
     // Copy the developer's own config so providers and models are real, then
     // add Ceetrix to the copy. Their file is never written.
     const configRoot = join(sandbox, 'config');
@@ -207,76 +346,39 @@ describe('the model can call a Ceetrix tool', () => {
     if (await fileExists(theirs)) {
       await copyFile(theirs, join(configRoot, 'opencode', 'opencode.json'));
     }
-
     const previous = process.env.XDG_CONFIG_HOME;
     process.env.XDG_CONFIG_HOME = configRoot;
-    const { harness } = await import('../src/opencode.js');
-    await harness.add({ apiKey: ceetrixKey!, url: 'https://api.ceetrix.com/mcp' });
+    await (await import('../src/opencode.js')).harness.add(spec);
     if (previous === undefined) delete process.env.XDG_CONFIG_HOME;
     else process.env.XDG_CONFIG_HOME = previous;
 
-    const output = await runAgent(binary!, ['run', '--log-level', 'ERROR', '--model', `${TEST_PROVIDER}/${TEST_MODEL}`, PROMPT], { ...process.env, XDG_CONFIG_HOME: configRoot });
-    expectRealResult(output, 'OpenCode');
-  }, MODEL_TIMEOUT_MS);
+    return {
+      cwd: workdir,
+      env: { ...process.env, XDG_CONFIG_HOME: configRoot },
+      args: (prompt) => [
+        'run',
+        '--log-level',
+        'ERROR',
+        '--model',
+        `${TEST_PROVIDER}/${TEST_MODEL}`,
+        prompt,
+      ],
+    };
+  }
 
-  it('pi, through the third-party adapter', async () => {
-    const binary = await find('pi');
-    if (!canRun(binary, 'pi')) return;
-
-    const home = join(sandbox, 'home');
-    await mkdir(home, { recursive: true });
-
-    const previous = process.env.HOME;
-    process.env.HOME = home;
-    const { harness } = await import('../src/pi.js');
-    await harness.add({ apiKey: ceetrixKey!, url: 'https://api.ceetrix.com/mcp' });
-    process.env.HOME = previous;
-
-    // pi reaches Ceetrix through the adapter's proxy tool rather than through
-    // directly named tools, so this also exercises that indirection.
-    const output = await runAgent(binary!, ['-p', '--provider', TEST_PROVIDER, '--model', TEST_MODEL, PROMPT], { ...process.env, HOME: home });
-    expectRealResult(output, 'pi');
-  }, MODEL_TIMEOUT_MS);
-
-  it('omp', async () => {
-    const binary = await find('omp');
-    if (!canRun(binary, 'omp')) return;
-
-    const home = join(sandbox, 'home');
-    await mkdir(home, { recursive: true });
-
-    const previous = process.env.HOME;
-    process.env.HOME = home;
-    const { harness } = await import('../src/omp.js');
-    await harness.add({ apiKey: ceetrixKey!, url: 'https://api.ceetrix.com/mcp' });
-    process.env.HOME = previous;
-
-    const output = await runAgent(binary!, ['-p', '--model', TEST_MODEL, PROMPT], { ...process.env, HOME: home });
-    expectRealResult(output, 'omp');
-  }, MODEL_TIMEOUT_MS);
-
-  it('DeepSeek Harness, exposing tools as mcp__ceetrix__*', async () => {
-    const binary = await find('dsh');
-    const realDshHome = join(homedir(), '.dsh', 'profiles');
-    if (!canRun(binary, 'DeepSeek Harness')) return;
-    if (!(await fileExists(realDshHome))) {
-      console.log('Skipping DeepSeek Harness: no profile tree to copy');
-      return;
-    }
-
+  if (agent === 'dsh') {
+    // Copy the real profile tree: it carries the operator's own routing and
+    // their own written notes, and is small because dependencies are linked.
     const dshHome = join(sandbox, 'dsh');
     await cp(join(homedir(), '.dsh'), dshHome, { recursive: true });
-
     const previous = process.env.DSH_HOME;
     process.env.DSH_HOME = dshHome;
-    const { harness } = await import('../src/dsh.js');
-    await harness.add({ apiKey: ceetrixKey!, url: 'https://api.ceetrix.com/mcp' });
+    await (await import('../src/dsh.js')).harness.add(spec);
     if (previous === undefined) delete process.env.DSH_HOME;
     else process.env.DSH_HOME = previous;
 
-    // The machine's configured model server may be unreachable, so a provider
-    // overlay points dsh at one that is. This mirrors the shape of the
-    // operator's own home patch rather than inventing a new one.
+    // The machine's configured model server may be unreachable, so an overlay
+    // points dsh at one that is, mirroring the operator's own home patch.
     const overlay = join(sandbox, 'provider.yml');
     await writeFile(
       overlay,
@@ -302,7 +404,124 @@ describe('the model can call a Ceetrix tool', () => {
       'utf-8'
     );
 
-    const output = await runAgent(binary!, ['--profile', 'headless', '--patch', overlay, PROMPT], { ...process.env, DSH_HOME: dshHome });
-    expectRealResult(output, 'DeepSeek Harness');
+    return {
+      cwd: workdir,
+      env: { ...process.env, DSH_HOME: dshHome },
+      args: (prompt) => ['--profile', 'headless', '--patch', overlay, prompt],
+    };
+  }
+
+  // pi and omp are both isolated by HOME.
+  const home = join(sandbox, 'home');
+  await mkdir(home, { recursive: true });
+  const previous = process.env.HOME;
+  process.env.HOME = home;
+  await (await import(agent === 'pi' ? '../src/pi.js' : '../src/omp.js')).harness.add(spec);
+  process.env.HOME = previous;
+
+  return {
+    cwd: workdir,
+    env: { ...process.env, HOME: home },
+    args: (prompt) =>
+      agent === 'pi'
+        ? ['-p', '--provider', TEST_PROVIDER, '--model', TEST_MODEL, prompt]
+        : ['-p', '--model', TEST_MODEL, prompt],
+  };
+}
+
+/**
+ * The number of matches staging really holds for the test query.
+ *
+ * Fetched over a connection no agent touched, so the read assertion compares
+ * the agent's answer against the server's rather than against a pattern. A
+ * loose "contains some digits" check passes on a fabricated number and on
+ * stray digits elsewhere in the output; this cannot.
+ *
+ * @returns The current count as a string
+ * @throws Error when staging's reply cannot be parsed
+ */
+async function trueMatchCount(): Promise<string> {
+  const reply = await callCeetrixDirectly('search', {
+    query: TEST_QUERY,
+    remote_url: TEST_REMOTE,
+  });
+  const found = reply.match(FOUND_COUNT);
+  if (!found) throw new Error(`staging search reply had no match count: ${reply.slice(0, 120)}`);
+  return found[1];
+}
+
+beforeAll(async () => {
+  stagingKey = await readStagingKey();
+});
+
+beforeEach(async () => {
+  sandbox = await mkdtemp(join(tmpdir(), 'ceetrix-tool-arrival-'));
+});
+
+afterEach(async () => {
+  await rm(sandbox, { recursive: true, force: true });
+});
+
+/** The agents under test, with the binary each needs. */
+const AGENTS = [
+  { key: 'opencode', binary: 'opencode', label: 'OpenCode' },
+  { key: 'pi', binary: 'pi', label: 'pi, through the third-party adapter' },
+  { key: 'omp', binary: 'omp', label: 'omp' },
+  { key: 'dsh', binary: 'dsh', label: 'DeepSeek Harness, tools named mcp__ceetrix__*' },
+] as const;
+
+describe('the model can READ through a Ceetrix tool', () => {
+  it.each(AGENTS)('$label', async ({ key, binary, label }) => {
+    const path = await find(binary);
+    if (!canRun(path, label)) return;
+    if (key === 'dsh' && !(await fileExists(join(homedir(), '.dsh', 'profiles')))) {
+      console.log('Skipping DeepSeek Harness: no profile tree to copy');
+      return;
+    }
+
+    const expected = await trueMatchCount();
+    const runner = await configureAgent(key);
+    const output = await runAgent(path!, runner.args(readPrompt(key)), runner.env, runner.cwd);
+
+    expect(output.toLowerCase(), `${label} reported an error instead of a result`).not.toMatch(
+      /no project context|failed to connect|tool not found|unable to connect/
+    );
+    // The count comes from the server, so a model that did not call the tool
+    // cannot produce it.
+    expect(output, `${label} did not report staging's actual match count`).toContain(expected);
+  }, MODEL_TIMEOUT_MS);
+});
+
+describe('the model can WRITE through a Ceetrix tool', () => {
+  it.each(AGENTS)('$label', async ({ key, binary, label }) => {
+    const path = await find(binary);
+    if (!canRun(path, label)) return;
+    if (key === 'dsh' && !(await fileExists(join(homedir(), '.dsh', 'profiles')))) {
+      console.log('Skipping DeepSeek Harness: no profile tree to copy');
+      return;
+    }
+
+    const marker = writeMarker(key);
+    const runner = await configureAgent(key);
+    await runAgent(
+      path!,
+      runner.args(
+        `Use the ceetrix comment tool, action create, story_id ${STAGING_STORY_ID}, ` +
+          `remote_url '${TEST_REMOTE}', body exactly: ${marker}`
+      ),
+      runner.env,
+      runner.cwd
+    );
+
+    // Read back over a connection the agent had nothing to do with. What the
+    // agent said about its own success is not evidence: in the manual runs
+    // that preceded this file, all four claimed success before anything had
+    // been confirmed.
+    const comments = await callCeetrixDirectly('comment', {
+      action: 'list',
+      story_id: STAGING_STORY_ID,
+      remote_url: TEST_REMOTE,
+    });
+    expect(comments, `${label} did not create a comment on staging`).toContain(marker);
   }, MODEL_TIMEOUT_MS);
 });
