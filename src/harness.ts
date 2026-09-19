@@ -45,6 +45,23 @@ export interface HarnessAddSpec {
   url: string;
 }
 
+/**
+ * Software published by someone other than Ceetrix that a harness needs
+ * installed before it can reach Ceetrix at all.
+ *
+ * Declared on the harness rather than written out in the permission prompt, so
+ * the two cannot drift into an installer that fetches something it never
+ * named. A test asserts every declaration here appears in the disclosure.
+ */
+export interface ThirdPartyInstall {
+  /** The package, exactly as it is published. */
+  packageName: string;
+  /** Who publishes it. Not Ceetrix, which is the whole point of disclosing it. */
+  publisher: string;
+  /** Why the harness cannot reach Ceetrix without it. */
+  reason: string;
+}
+
 /** The box printed after a harness is configured. */
 export interface RestartNotice {
   /**
@@ -89,6 +106,13 @@ export interface Harness {
 
   /** Lines for `ceetrix --debug`. */
   diagnose(): Promise<string[]>;
+
+  /**
+   * Third-party software this harness installs during setup.
+   *
+   * Omitted by harnesses that install nothing, which is most of them.
+   */
+  readonly installs?: readonly ThirdPartyInstall[];
 
   /** Drop any memoised binary path. Tests only. */
   resetCache(): void;

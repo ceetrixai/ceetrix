@@ -28,6 +28,7 @@ import {
   type Harness,
   type HarnessAddSpec,
   type RestartNotice,
+  type ThirdPartyInstall,
 } from './harness.js';
 import { CEETRIX_MCP_SERVER_NAME } from './constants.js';
 import { writeMcpEntry, hasMcpEntry, removeMcpEntry, fileExists } from './json-mcp-config.js';
@@ -80,6 +81,21 @@ export const PI_MCP_ADAPTER_PACKAGE = 'pi-mcp-adapter';
 
 /** Argument form `pi install` expects for an npm-published extension. */
 export const PI_MCP_ADAPTER_SOURCE = `npm:${PI_MCP_ADAPTER_PACKAGE}`;
+
+/**
+ * What pi needs installed, and who publishes it.
+ *
+ * Published by someone unrelated to pi's own authors, which is worth stating
+ * plainly: pi's authors have ruled MCP out of core, so this extension exists
+ * against their stated direction and Ceetrix does not control it.
+ */
+const PI_INSTALLS: readonly ThirdPartyInstall[] = [
+  {
+    packageName: PI_MCP_ADAPTER_SOURCE,
+    publisher: 'nicobailon \u2014 not pi\u2019s authors',
+    reason: 'pi has no MCP support, by its authors\u2019 design',
+  },
+];
 
 const binary = cachedBinary({
   command: PI_COMMAND,
@@ -233,6 +249,8 @@ export const harness = {
       `config: ${configPath}${(await fileExists(configPath)) ? '' : ' (absent)'}`,
     ];
   },
+
+  installs: PI_INSTALLS,
 
   resetCache: () => binary.reset(),
 } satisfies Harness;

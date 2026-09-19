@@ -91,3 +91,48 @@ describe('permission model', () => {
     expect(hasPermission()).toBe(true);
   });
 });
+
+// --- Story 547: disclosure of third-party installs ---
+
+describe('disclosure box (story 547)', () => {
+  it('no line exceeds the box width', async () => {
+    const { disclosureLines, PERMISSION_BOX_WIDTH } = await import('../src/permissions.js');
+
+    // A line wider than its border is a silent visual defect: the box just
+    // looks broken and no other assertion notices.
+    for (const line of disclosureLines()) {
+      expect(line.length, `too long: ${line}`).toBeLessThanOrEqual(PERMISSION_BOX_WIDTH - 2);
+    }
+  });
+
+  it('names every third-party package any harness would install', async () => {
+    const { disclosureLines } = await import('../src/permissions.js');
+    const { HARNESSES } = await import('../src/harnesses.js');
+
+    // Guards against the installer fetching something the prompt never named.
+    const text = disclosureLines().join('\n');
+    const declared = HARNESSES.flatMap((h) => h.installs ?? []);
+
+    expect(declared.length).toBeGreaterThan(0);
+    for (const install of declared) {
+      expect(text).toContain(install.packageName);
+      expect(text).toContain(install.publisher);
+    }
+  });
+
+  it('does not claim that nothing leaves the machine', async () => {
+    const { disclosureLines } = await import('../src/permissions.js');
+    const text = disclosureLines().join('\n').toLowerCase();
+
+    // The old wording said "Nothing is sent externally unless you choose to
+    // share." Setup now fetches packages, so that sentence would be false.
+    expect(text).not.toContain('nothing is sent externally');
+  });
+
+  it('separates installing software from running commands', async () => {
+    const { disclosureLines } = await import('../src/permissions.js');
+    const text = disclosureLines().join('\n');
+
+    expect(text).toContain('INSTALL software published by others');
+  });
+});

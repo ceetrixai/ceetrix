@@ -32,6 +32,7 @@ import {
   type Harness,
   type HarnessAddSpec,
   type RestartNotice,
+  type ThirdPartyInstall,
 } from './harness.js';
 import { CEETRIX_MCP_SERVER_NAME } from './constants.js';
 import { fileExists } from './json-mcp-config.js';
@@ -98,6 +99,22 @@ const DSH_ENTRY_ID = 'ceetrix-mcp';
  * same thing, and not `remote`, which is OpenCode's.
  */
 const DSH_TRANSPORT = 'streamable-http';
+
+/**
+ * What dsh needs installed, and who publishes it.
+ *
+ * Unlike pi's adapter, this is published by the same organisation as the
+ * harness. It is still a third party relative to Ceetrix and is disclosed on
+ * the same terms, but the disclosure names each separately rather than
+ * implying they carry the same risk.
+ */
+const DSH_INSTALLS: readonly ThirdPartyInstall[] = [
+  {
+    packageName: DSH_MCP_PLUGIN_PACKAGE,
+    publisher: 'DeepSeek, the same publisher as the harness',
+    reason: 'DeepSeek Harness has no built-in MCP client',
+  },
+];
 
 const binary = cachedBinary({
   command: DSH_COMMAND,
@@ -347,6 +364,8 @@ export const harness = {
 
     return lines;
   },
+
+  installs: DSH_INSTALLS,
 
   resetCache: () => binary.reset(),
 } satisfies Harness;
