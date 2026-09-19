@@ -48,6 +48,7 @@ import {
 } from './codex.js';
 import { harness as ompHarness } from './omp.js';
 import { harness as opencodeHarness } from './opencode.js';
+import { harness as piHarness } from './pi.js';
 /**
  * Report where a command resolves on PATH, for the diagnostic report.
  *
@@ -162,7 +163,7 @@ const codexHarness = {
  * Declared `as const` so each entry's `id` keeps its literal type and
  * `AgentType` below resolves to the union of them rather than to `string`.
  */
-const HARNESS_LIST = [claudeHarness, codexHarness, ompHarness, opencodeHarness] as const;
+const HARNESS_LIST = [claudeHarness, codexHarness, ompHarness, opencodeHarness, piHarness] as const;
 
 /** Supported agent types, derived from the registry rather than declared beside it. */
 export type AgentType = (typeof HARNESS_LIST)[number]['id'];
