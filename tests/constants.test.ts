@@ -224,13 +224,13 @@ describe('getMcpServerUrl with env vars', () => {
 
   it('derives MCP URL from CEETRIX_API_URL when CEETRIX_MCP_URL not set', () => {
     withEnv({ CEETRIX_API_URL: 'https://staging-api.ceetrix.com', CEETRIX_MCP_URL: undefined }, () => {
-      expect(getMcpServerUrl()).toBe('https://staging-api.ceetrix.com/sse');
+      expect(getMcpServerUrl()).toBe('https://staging-api.ceetrix.com/mcp');
     });
   });
 
-  it('strips trailing slash from CEETRIX_API_URL before appending /sse', () => {
+  it('strips trailing slash from CEETRIX_API_URL before appending the endpoint path', () => {
     withEnv({ CEETRIX_API_URL: 'https://staging-api.ceetrix.com/', CEETRIX_MCP_URL: undefined }, () => {
-      expect(getMcpServerUrl()).toBe('https://staging-api.ceetrix.com/sse');
+      expect(getMcpServerUrl()).toBe('https://staging-api.ceetrix.com/mcp');
     });
   });
 

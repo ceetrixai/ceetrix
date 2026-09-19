@@ -5,6 +5,9 @@
  * not at build time when TypeScript compiles.
  */
 
+/** Production API origin, used when no custom URL is configured. */
+const PRODUCTION_API_URL_FOR_MCP = 'https://api.ceetrix.com';
+
 /** Base URL for Ceetrix API, can be overridden via CEETRIX_API_URL env var */
 export function getApiBaseUrl(): string {
   return process.env.CEETRIX_API_URL || 'https://api.ceetrix.com';
@@ -24,22 +27,47 @@ export const DEFAULT_PORT = 54321;
 /** Ports to try for callback server if default is in use */
 export const PORT_RANGE = [54321, 54322, 54323, 54324, 54325];
 
-/** MCP server URL for Claude Code config (HTTP transport) */
+/**
+ * Path of the streamable HTTP endpoint on a Ceetrix deployment.
+ *
+ * Every harness registers a streamable HTTP server: Claude Code with
+ * `--transport http`, Codex and pi by URL, omp as `type: "http"`, OpenCode as
+ * `type: "remote"`, dsh as `transport: streamable-http`. One endpoint has to
+ * satisfy all six, and this is it.
+ */
+const MCP_ENDPOINT_PATH = '/mcp';
+
+/**
+ * The MCP endpoint every harness is pointed at.
+ *
+ * An explicit CEETRIX_MCP_URL always wins. Otherwise a custom CEETRIX_API_URL
+ * has the endpoint path appended, so setting the API URL alone for a staging
+ * or local deployment does not silently leave the harnesses aimed at
+ * production.
+ *
+ * That derivation used to append `/sse`, which was correct when Claude Code
+ * was the only target and is wrong now: four of the six harnesses declare
+ * streamable HTTP explicitly, so one spec reached six harnesses and suited at
+ * most two of them. Deployments serve both paths — an `initialize` handshake
+ * against a staging `/mcp` returns the server's capabilities — so naming the
+ * streamable one costs nothing and makes the spec uniform, which is what the
+ * registry's single add signature depends on.
+ *
+ * @returns The MCP endpoint URL
+ */
 export function getMcpServerUrl(): string {
   // Explicit CEETRIX_MCP_URL takes precedence
   if (process.env.CEETRIX_MCP_URL) {
     return process.env.CEETRIX_MCP_URL;
   }
 
-  // If custom API URL is set, derive MCP URL from it (append /sse)
-  // This prevents the common mistake of setting CEETRIX_API_URL but forgetting CEETRIX_MCP_URL
   if (process.env.CEETRIX_API_URL) {
     const apiUrl = process.env.CEETRIX_API_URL.replace(/\/+$/, '');
-    return `${apiUrl}/sse`;
+    return `${apiUrl}${MCP_ENDPOINT_PATH}`;
   }
 
   // Default to production
-  return 'https://api.ceetrix.com/mcp';
+  return `${PRODUCTION_API_URL_FOR_MCP}${MCP_ENDPOINT_PATH}`;
 }
 
 // --- Device Flow constants (Story 224) ---
