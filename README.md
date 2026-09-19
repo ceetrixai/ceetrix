@@ -54,11 +54,13 @@ DeepSeek themselves, and it is named on the same screen.
 | OpenAI Codex CLI | `codex mcp list` |
 | OpenCode | `opencode mcp list` |
 | DeepSeek Harness | `dsh --profile <name> --dump-config` |
-| pi | start `pi`, then `/mcp tools` |
-| omp | start `omp`, then `/mcp list` |
+| pi | `pi -p "call the ceetrix search tool"` |
+| omp | `omp -p "call the ceetrix search tool"` |
 
-pi and omp have no equivalent you can run from a shell, so those two are
-checked from inside the agent.
+pi and omp have no `mcp list` subcommand, so the first four rows check the
+connection and the last two check something stronger: that the model can
+actually call a Ceetrix tool. Inside either agent you can also run `/mcp tools`
+or `/mcp list`.
 
 ## Requirements
 

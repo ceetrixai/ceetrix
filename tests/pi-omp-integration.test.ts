@@ -1,17 +1,19 @@
 /**
  * pi and omp integration, and an honest statement of where it stops.
  *
- * These two are grouped because they share a limitation that the other
- * harnesses do not: **neither exposes a non-interactive way to list its MCP
- * servers.** pi has no `mcp` subcommand and the adapter's own CLI offers only
- * `init` and token management; omp's `/mcp` commands exist solely inside the
- * interactive session, and the `omp mcp` subcommand its published docs
- * describe does not exist in the shipped binary.
+ * These two are grouped because neither exposes an `mcp` subcommand that lists
+ * servers: pi has none and its adapter's CLI offers only `init` and token
+ * management; omp's `/mcp` commands exist solely inside the interactive
+ * session, and the `omp mcp` subcommand its published docs describe does not
+ * exist in the shipped binary. The assertions below hold that.
  *
- * So a passing run here means the extension registered and the settings file
- * is correct. It does NOT mean Ceetrix's tools reached the model. That
- * confirmation is a manual step, recorded in the runbook. The test names are
- * written so they cannot be mistaken for the stronger claim.
+ * A passing run here means the extension registered and the settings file is
+ * correct. It does not mean the tools reached the model — but that is proved
+ * separately in tool-arrival-integration.test.ts, which runs each agent's
+ * non-interactive print mode and makes the model call a Ceetrix tool for real.
+ * An earlier version of this file claimed that could not be done for pi and
+ * omp. That was a leap from "no listing subcommand" to "unverifiable", and it
+ * was wrong.
  *
  * Everything runs against a temp HOME, so the developer's own pi and omp
  * state is never read or written.
@@ -154,7 +156,7 @@ describe('pi integration: extension registers and the settings file is written',
     process.env.HOME = previousHome;
   }, INSTALL_TIMEOUT_MS);
 
-  it('has no non-interactive way to confirm the tools reached the model', async () => {
+  it('has no mcp subcommand (tool arrival is proved by the print-mode suite)', async () => {
     if (!piPath) {
       console.log('Skipping: pi not installed');
       return;

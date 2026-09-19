@@ -236,7 +236,8 @@ export const harness = {
       `MCP reaches pi through ${PI_MCP_ADAPTER_PACKAGE}, a third-party`,
       'extension that Ceetrix installed and does not maintain.',
       '',
-      'To check the server inside pi, run /mcp tools.',
+      'To check it, run /mcp tools inside pi, or from a shell:',
+      "  pi -p 'call the ceetrix search tool'",
     ],
   }),
 

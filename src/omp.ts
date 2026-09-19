@@ -9,9 +9,11 @@
  * this module looks the way it does:
  *
  *   1. There is no `omp mcp` subcommand. `omp mcp --help` falls through to the
- *      default launch help. The /mcp add|list|test commands exist only as
- *      slash commands inside the TUI, so configuration is a file write and
- *      there is no non-interactive command to verify it with.
+ *      default launch help, so configuration is a file write rather than a
+ *      CLI call. That is NOT the same as being unverifiable: `omp -p` answers
+ *      one prompt and exits, which is enough to make the model call a Ceetrix
+ *      tool and read the reply. An earlier version of this module claimed no
+ *      non-interactive check existed; see tool-arrival-integration.test.ts.
  *   2. `omp --version` prints `omp/18.2.6`, a real product marker. omp is the
  *      only one of the four new harnesses that can be identified from its
  *      version string rather than its help text.
@@ -186,8 +188,8 @@ export const harness = {
       'Quit and reopen omp, then describe a feature you',
       'want to build and ask it to "create a story for it".',
       '',
-      'To check the server inside omp, run /mcp list.',
-      'omp has no non-interactive mcp command.',
+      'To check it, run /mcp list inside omp, or from a shell:',
+      "  omp -p 'call the ceetrix search tool'",
     ],
   }),
 
