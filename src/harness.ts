@@ -118,6 +118,30 @@ export interface Harness {
   resetCache(): void;
 }
 
+/**
+ * Raised when a harness declines to change something rather than failing.
+ *
+ * The distinction matters to the person reading the summary. "Failed" means
+ * Ceetrix tried and could not. "Skipped" means Ceetrix deliberately did not
+ * touch something — an annotated settings file it would have to rewrite,
+ * destroying the person's comments — and there is something they can do about
+ * it by hand. Collapsing the two would present a considered refusal as a bug.
+ */
+export class HarnessSkipped extends Error {
+  /** What the person should do instead, printed under the summary. */
+  readonly instructions: string;
+
+  /**
+   * @param message - Why the harness was skipped
+   * @param instructions - What to do by hand
+   */
+  constructor(message: string, instructions: string) {
+    super(message);
+    this.name = 'HarnessSkipped';
+    this.instructions = instructions;
+  }
+}
+
 /** How to find and verify a harness binary. */
 export interface BinaryProbeSpec {
   /** Command name to look up on PATH. */

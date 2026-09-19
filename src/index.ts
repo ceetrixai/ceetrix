@@ -10,7 +10,7 @@ import { openBrowser, canLaunchBrowser } from './browser.js';
 import { promptForRepo, promptExistingConfig, promptAgentWizard, AgentType } from './prompts.js';
 import { writeConfigToFile } from './claude.js';
 import { HARNESSES, getHarness } from './harnesses.js';
-import type { RestartNotice } from './harness.js';
+import { HarnessSkipped, type RestartNotice } from './harness.js';
 import { getApiBaseUrl, getSetupUrl, AUTH_TIMEOUT_MS, getMcpServerUrl, isCustomApiUrl, getAutoConfigPath } from './constants.js';
 import { printDebugInfo } from './debug.js';
 import { enforceLatestVersion } from './version-check.js';
@@ -399,9 +399,32 @@ async function recordConsentViaApi(apiKey: string, termsVersion: string): Promis
 }
 
 /**
+ * What happened to one agent during setup.
+ *
+ * Three outcomes, not two. "Skipped" is a considered refusal with something
+ * the person can do by hand; "failed" is Ceetrix trying and not managing it.
+ * Presenting a refusal as a failure would be misleading in the one place a
+ * person is deciding whether setup worked.
+ */
+interface HarnessOutcome {
+  label: string;
+  status: 'connected' | 'skipped' | 'failed';
+  detail?: string;
+}
+
+/**
  * Write MCP config to all selected agents or a custom file.
  *
  * Shared by both browser and device flow paths.
+ *
+ * One agent failing does not abandon the others. With two agents the only
+ * outcomes were success and an aborted run, so there was no error handling at
+ * all; with six, two of which fetch packages over a network, a single failure
+ * ending the run is a real regression. Every outcome is captured and reported
+ * together at the end.
+ *
+ * This changes behaviour for Claude Code and Codex too: a failure there used to
+ * abort, and now reports and continues. That is intended.
  *
  * @param apiKey - The API key from authentication
  * @param configPath - Custom config file path (null = use agent's default)
@@ -418,15 +441,71 @@ async function writeConfig(apiKey: string, configPath: string | null, agents: Ag
   }
 
   const url = getMcpServerUrl();
+  const outcomes: HarnessOutcome[] = [];
 
   for (const agent of agents) {
     const harness = getHarness(agent);
     if (!harness) continue;
 
     console.log(`Adding Ceetrix to ${harness.label}...`);
-    await harness.add({ apiKey, url });
-    console.log('✓ Configuration added\n');
-    printRestartNotice(harness.restartNotice());
+
+    try {
+      await harness.add({ apiKey, url });
+      console.log('✓ Configuration added\n');
+      printRestartNotice(harness.restartNotice());
+      outcomes.push({ label: harness.label, status: 'connected' });
+    } catch (error) {
+      if (error instanceof HarnessSkipped) {
+        console.log(`⊘ Skipped: ${error.message}\n`);
+        console.log(`${error.instructions}\n`);
+        outcomes.push({ label: harness.label, status: 'skipped', detail: error.message });
+      } else {
+        console.error(`✗ Failed: ${(error as Error).message}\n`);
+        outcomes.push({
+          label: harness.label,
+          status: 'failed',
+          detail: (error as Error).message,
+        });
+      }
+    }
+  }
+
+  reportOutcomes(outcomes);
+}
+
+/**
+ * Print the per-agent summary and set the exit status.
+ *
+ * A run where any chosen agent was not connected does not describe itself as
+ * successful, and exits non-zero so a scripted install can tell. `exitCode` is
+ * set rather than `exit()` called, so the process still finishes normally.
+ *
+ * @param outcomes - One entry per agent that was attempted
+ */
+function reportOutcomes(outcomes: HarnessOutcome[]): void {
+  if (outcomes.length <= 1 && outcomes.every((o) => o.status === 'connected')) {
+    // A single successful agent already printed its own confirmation; a
+    // one-line summary underneath it would only be noise.
+    return;
+  }
+
+  const symbols = { connected: '✓', skipped: '⊘', failed: '✗' } as const;
+
+  console.log('Setup summary');
+  console.log('─────────────');
+  for (const outcome of outcomes) {
+    const detail = outcome.detail ? ` — ${outcome.detail}` : '';
+    console.log(`  ${symbols[outcome.status]} ${outcome.label}: ${outcome.status}${detail}`);
+  }
+  console.log('');
+
+  const unfinished = outcomes.filter((o) => o.status !== 'connected');
+  if (unfinished.length > 0) {
+    console.log(
+      `${unfinished.length} of ${outcomes.length} agents were not configured. ` +
+        `Ceetrix works in the ones marked connected.\n`
+    );
+    process.exitCode = 1;
   }
 }
 
@@ -493,6 +572,12 @@ function printCustomConfigNotice(configPath: string): void {
       `  claude --mcp-config ${configPath}`,
       '',
       'Your production ~/.claude.json was NOT modified.',
+      '',
+      // Settled under 547.8 rather than left implicit: --config writes a
+      // Claude-Code-shaped file and no other agent reads that shape or that
+      // flag, so the option stays Claude Code only and says so.
+      'This option is for Claude Code only. The other agents',
+      'are not configured by --config; run setup without it.',
     ],
   });
 }

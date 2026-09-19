@@ -14,6 +14,7 @@ import { mkdtemp, rm, readFile, writeFile, mkdir, stat, chmod } from 'fs/promise
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { harness, getConfigPath, getJsoncConfigPath } from '../src/opencode.js';
+import { HarnessSkipped } from '../src/harness.js';
 
 const TEST_KEY = 'test_api_key';
 const TEST_URL = 'https://api.ceetrix.com/mcp';
@@ -168,7 +169,7 @@ describe('opencode annotated config', () => {
     await writeFile(getJsoncConfigPath(), jsoncBody, 'utf-8');
 
     await expect(harness.add({ apiKey: TEST_KEY, url: TEST_URL })).rejects.toThrow(
-      /will not edit it/
+      HarnessSkipped
     );
 
     // The annotated file is untouched and no plain-JSON sibling was created.
@@ -179,15 +180,22 @@ describe('opencode annotated config', () => {
   it('TC-32: the refusal names the file and gives the text to paste', async () => {
     await writeFile(getJsoncConfigPath(), '{}', 'utf-8');
 
-    await expect(harness.add({ apiKey: TEST_KEY, url: TEST_URL })).rejects.toThrow(
-      /opencode\.jsonc/
-    );
-    await expect(harness.add({ apiKey: TEST_KEY, url: TEST_URL })).rejects.toThrow(/"remote"/);
+    // A refusal is a skip, not a failure: there is something the person can do
+    // by hand, and the setup summary must not present it as a bug.
+    const error = await harness
+      .add({ apiKey: TEST_KEY, url: TEST_URL })
+      .then(() => null)
+      .catch((e: unknown) => e as InstanceType<typeof HarnessSkipped>);
+
+    expect(error).toBeInstanceOf(HarnessSkipped);
+    expect(error!.message).toContain('opencode.jsonc');
+    expect(error!.instructions).toContain('"remote"');
+    expect(error!.instructions).toContain('opencode.jsonc');
   });
 
   it('refuses on removal too, rather than half-honouring the annotated file', async () => {
     await writeFile(getJsoncConfigPath(), '{}', 'utf-8');
-    await expect(harness.remove()).rejects.toThrow(/will not edit it/);
+    await expect(harness.remove()).rejects.toThrow(HarnessSkipped);
   });
 });
 

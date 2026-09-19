@@ -606,3 +606,120 @@ describe('agent wizard flow (Story 397)', () => {
     );
   });
 });
+
+// --- Story 547.8: one agent failing must not cost the others ---
+
+/**
+ * Per-agent statuses with every agent defaulting to absent.
+ *
+ * Added so a seventh harness does not require editing every literal in this
+ * file again.
+ *
+ * @param overrides - Agents to mark detected or configured
+ * @returns A full status map
+ */
+function statusesWith(overrides: Record<string, { detected: boolean; configured: boolean }>) {
+  const base: Record<string, { detected: boolean; configured: boolean }> = {};
+  for (const id of ['claude', 'codex', 'omp', 'opencode', 'pi', 'dsh']) {
+    base[id] = { detected: false, configured: false };
+  }
+  return { ...base, ...overrides };
+}
+
+describe('partial failure across agents (story 547.8)', () => {
+  let mockConsoleLog: ReturnType<typeof vi.spyOn>;
+  let mockConsoleError: ReturnType<typeof vi.spyOn>;
+  let closeServer: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetStoredConsentStatus.mockResolvedValue(null);
+    mockCanLaunchBrowser.mockReturnValue(true);
+    mockConsoleLog = vi.spyOn(console, 'log').mockImplementation(() => {});
+    mockConsoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    closeServer = vi.fn();
+    setupBrowserFlow(closeServer);
+    mockDetectGitRemote.mockResolvedValue({ status: 'detected', repo: 'owner/repo' });
+    mockGetAgentStatuses.mockResolvedValue(
+      statusesWith({
+        claude: { detected: true, configured: false },
+        codex: { detected: true, configured: false },
+      })
+    );
+    mockPromptAgentWizard.mockResolvedValue(['claude', 'codex']);
+    process.exitCode = undefined;
+  });
+
+  afterEach(() => {
+    mockConsoleLog.mockRestore();
+    mockConsoleError.mockRestore();
+    process.exitCode = undefined;
+  });
+
+  it('configures the remaining agents when one fails', async () => {
+    mockAddConfig.mockRejectedValue(new Error('claude exploded'));
+    mockAddCodexConfig.mockResolvedValue(undefined);
+
+    await main();
+
+    // Codex still got configured despite Claude Code failing first. Before
+    // this, the first throw ended the run.
+    expect(mockAddCodexConfig).toHaveBeenCalled();
+  });
+
+  it('reports every agent in the summary, with its outcome', async () => {
+    mockAddConfig.mockRejectedValue(new Error('claude exploded'));
+    mockAddCodexConfig.mockResolvedValue(undefined);
+
+    await main();
+
+    const printed = mockConsoleLog.mock.calls.flat().join('\n');
+    expect(printed).toContain('Setup summary');
+    expect(printed).toContain('Claude Code: failed');
+    expect(printed).toContain('OpenAI Codex CLI: connected');
+  });
+
+  it('does not describe a partial run as successful', async () => {
+    mockAddConfig.mockRejectedValue(new Error('claude exploded'));
+    mockAddCodexConfig.mockResolvedValue(undefined);
+
+    await main();
+
+    const printed = mockConsoleLog.mock.calls.flat().join('\n');
+    expect(printed).toContain('were not configured');
+  });
+
+  it('exits non-zero when any chosen agent was not configured', async () => {
+    mockAddConfig.mockRejectedValue(new Error('claude exploded'));
+    mockAddCodexConfig.mockResolvedValue(undefined);
+
+    await main();
+
+    // A scripted install has to be able to tell.
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('exits zero when every chosen agent was configured', async () => {
+    mockAddConfig.mockResolvedValue(undefined);
+    mockAddCodexConfig.mockResolvedValue(undefined);
+
+    await main();
+
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('reports a deliberate refusal as skipped, not as a failure', async () => {
+    const { HarnessSkipped } = await import('../src/harness.js');
+    mockAddConfig.mockRejectedValue(
+      new HarnessSkipped('config.jsonc exists', 'Add this block by hand')
+    );
+    mockAddCodexConfig.mockResolvedValue(undefined);
+
+    await main();
+
+    const printed = mockConsoleLog.mock.calls.flat().join('\n');
+    expect(printed).toContain('Claude Code: skipped');
+    expect(printed).toContain('Add this block by hand');
+    expect(printed).not.toContain('Claude Code: failed');
+  });
+});

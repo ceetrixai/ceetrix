@@ -19,6 +19,7 @@ import { join } from 'path';
 import { homedir } from 'os';
 import {
   cachedBinary,
+  HarnessSkipped,
   type Harness,
   type HarnessAddSpec,
   type RestartNotice,
@@ -128,9 +129,9 @@ async function refuseIfJsonc(): Promise<void> {
   const jsoncPath = getJsoncConfigPath();
 
   if (await fileExists(jsoncPath)) {
-    throw new Error(
-      `${jsoncPath} exists. Ceetrix will not edit it, because writing JSON back ` +
-        `would delete its comments. Add this to the "mcp" block yourself:\n` +
+    throw new HarnessSkipped(
+      `${jsoncPath} exists, and writing JSON back over it would delete its comments`,
+      `Add this to the "mcp" block in ${jsoncPath} yourself:\n` +
         `  "${CEETRIX_MCP_SERVER_NAME}": { "type": "remote", "url": "<url>", ` +
         `"headers": { "X-API-Key": "<key>" }, "enabled": true }`
     );
