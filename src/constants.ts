@@ -80,6 +80,15 @@ export function getDeviceCompleteUrl(): string {
 
 // --- End Device Flow constants ---
 
+/**
+ * The name Ceetrix registers its MCP server under, in every harness.
+ *
+ * It is also the tool-name prefix the agent sees: a harness that namespaces
+ * MCP tools exposes Ceetrix's as `mcp__ceetrix__<tool>`, which is the form the
+ * rest of the product assumes. Changing this renames every tool.
+ */
+export const CEETRIX_MCP_SERVER_NAME = 'ceetrix';
+
 // --- Codex CLI constants (Story 397) ---
 
 /** Codex CLI config directory (relative to home) */
@@ -89,10 +98,7 @@ export const CODEX_CONFIG_DIR = '.codex';
 export const CODEX_CONFIG_FILE = 'config.toml';
 
 /** MCP server name in Codex TOML config */
-export const CODEX_MCP_SERVER_NAME = 'ceetrix';
-
-/** Environment variable name for API key in Codex env_http_headers */
-export const CODEX_API_KEY_ENV_VAR = 'CEETRIX_API_KEY';
+export const CODEX_MCP_SERVER_NAME = CEETRIX_MCP_SERVER_NAME;
 
 /** Expected string in Codex CLI version output (lowercase match) */
 export const CODEX_VERSION_MARKER = 'codex';

@@ -4,6 +4,9 @@
 
 import { input, select, checkbox } from '@inquirer/prompts';
 import type { AgentStatus } from './config.js';
+import { HARNESSES, type AgentType } from './harnesses.js';
+
+export type { AgentType };
 
 /**
  * Prompt user for repository in owner/repo format.
@@ -51,14 +54,19 @@ export async function promptExistingConfig(): Promise<ExistingConfigAction> {
   return action;
 }
 
-/** Supported agent types */
-export type AgentType = 'claude' | 'codex';
-
-/** Display labels for each agent type */
-const AGENT_LABELS: Record<AgentType, string> = {
-  claude: 'Claude Code',
-  codex: 'OpenAI Codex CLI',
-};
+/**
+ * Display label for one agent.
+ *
+ * Read from the registry rather than a second list beside it, so a harness
+ * cannot be added with no name or, worse, with a name that disagrees with the
+ * one its restart notice and the not-found message use.
+ *
+ * @param agent - The agent identifier
+ * @returns The agent's display label
+ */
+function agentLabel(agent: AgentType): string {
+  return HARNESSES.find((harness) => harness.id === agent)?.label ?? agent;
+}
 
 /**
  * Wizard-style prompt for incremental agent configuration.
@@ -89,8 +97,8 @@ export async function promptAgentWizard(
 
   const choices = detected.map(([agent, status]) => ({
     name: status.configured
-      ? `${AGENT_LABELS[agent]} (configured)`
-      : AGENT_LABELS[agent],
+      ? `${agentLabel(agent)} (configured)`
+      : agentLabel(agent),
     value: agent,
     checked: !status.configured,
     disabled: status.configured ? '(already configured)' as const : false as const,

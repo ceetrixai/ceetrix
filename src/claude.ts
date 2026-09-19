@@ -22,23 +22,31 @@ const execAsync = promisify(exec);
 /** Timeout for Claude CLI commands in milliseconds */
 const CLAUDE_COMMAND_TIMEOUT_MS = 10000;
 
-/** Short timeout for version check (old versions may hang) */
-const VERSION_CHECK_TIMEOUT_MS = 3000;
-
-/** Expected string in Claude Code version output */
-const CLAUDE_CODE_VERSION_MARKER = 'Claude Code';
+/**
+ * Expected string in Claude Code version output.
+ *
+ * Exported because the diagnostic report needs the same values. Keeping a
+ * second copy there is how this list drifted out of step once already
+ * (docs/design/ceetrix-v2.md:701); these are deliberately NOT moved into
+ * constants.ts, because claude.test.ts mocks that module and moving them
+ * breaks twelve tests that exist to catch exactly this kind of change.
+ */
+export const CLAUDE_CODE_VERSION_MARKER = 'Claude Code';
 
 /** Minimum required Claude CLI version (2.0 supports http transport) */
-const MIN_CLAUDE_VERSION = { major: 2, minor: 0 };
+export const MIN_CLAUDE_VERSION = { major: 2, minor: 0 };
 
 /** Common installation paths for Claude CLI (fallback when not in PATH) */
-const COMMON_CLAUDE_PATHS = [
+export const COMMON_CLAUDE_PATHS = [
   '/opt/homebrew/bin/claude', // macOS Homebrew ARM
   '/usr/local/bin/claude', // macOS Homebrew Intel / Linux
   '/usr/bin/claude', // Linux system package
   '/snap/bin/claude', // Linux Snap package
   `${process.env.HOME}/.local/bin/claude`, // pip/pipx style installs
 ];
+
+/** Short timeout for version check (old versions may hang) */
+const VERSION_CHECK_TIMEOUT_MS = 3000;
 
 /** Cached path to claude executable */
 let cachedClaudePath: string | null = null;
@@ -247,3 +255,13 @@ export async function writeConfigToFile(
   await writeFile(filePath, JSON.stringify(config, null, 2), 'utf-8');
 }
 
+/**
+ * Reset cached claude path (for testing).
+ *
+ * Mirrors the equivalent in codex.ts. The harness registry needs every entry
+ * to be resettable so one module's memoised probe cannot leak into another
+ * module's test.
+ */
+export function resetCache(): void {
+  cachedClaudePath = null;
+}

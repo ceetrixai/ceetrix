@@ -8,8 +8,9 @@ import type { AgentStatus } from './config.js';
 import { startCallbackServer } from './server.js';
 import { openBrowser, canLaunchBrowser } from './browser.js';
 import { promptForRepo, promptExistingConfig, promptAgentWizard, AgentType } from './prompts.js';
-import { addConfig as addClaudeConfig, writeConfigToFile } from './claude.js';
-import { addConfig as addCodexConfig } from './codex.js';
+import { writeConfigToFile } from './claude.js';
+import { HARNESSES, getHarness } from './harnesses.js';
+import type { RestartNotice } from './harness.js';
 import { getApiBaseUrl, getSetupUrl, AUTH_TIMEOUT_MS, getMcpServerUrl, isCustomApiUrl, getAutoConfigPath } from './constants.js';
 import { printDebugInfo } from './debug.js';
 import { enforceLatestVersion } from './version-check.js';
@@ -145,8 +146,10 @@ export async function main(): Promise<void> {
     if (detected.length === 0) {
       console.error('✗ No supported coding agent found\n');
       console.error('Ceetrix works with:');
-      console.error('  - Claude Code (v2.0+): https://docs.anthropic.com/en/docs/claude-code');
-      console.error('  - OpenAI Codex CLI:    https://github.com/openai/codex');
+      const widest = Math.max(...HARNESSES.map((h) => h.label.length));
+      for (const harness of HARNESSES) {
+        console.error(`  - ${`${harness.label}:`.padEnd(widest + 2)} ${harness.homepage}`);
+      }
       console.error('');
       console.error('Run: npx ceetrix --debug');
       console.error('for diagnostic info to share at: https://ceetrix.com/discord\n');
@@ -417,21 +420,13 @@ async function writeConfig(apiKey: string, configPath: string | null, agents: Ag
   const url = getMcpServerUrl();
 
   for (const agent of agents) {
-    switch (agent) {
-      case 'claude':
-        console.log('Adding Ceetrix to Claude Code...');
-        await addClaudeConfig(apiKey);
-        console.log('✓ Configuration added\n');
-        printRestartNotice();
-        break;
+    const harness = getHarness(agent);
+    if (!harness) continue;
 
-      case 'codex':
-        console.log('Adding Ceetrix to Codex CLI...');
-        await addCodexConfig(apiKey, url);
-        console.log('✓ Configuration added\n');
-        printCodexRestartNotice();
-        break;
-    }
+    console.log(`Adding Ceetrix to ${harness.label}...`);
+    await harness.add({ apiKey, url });
+    console.log('✓ Configuration added\n');
+    printRestartNotice(harness.restartNotice());
   }
 }
 
@@ -461,40 +456,44 @@ function createCancellableTimeout(ms: number): CancellableTimeout {
 }
 
 /**
- * Print the restart notice with instructions.
+ * Inner width of a notice box, in characters.
+ *
+ * Named because the three hand-drawn boxes this replaces each repeated the
+ * figure as a bare number in their border strings, and two of them disagreed
+ * with their own borders by a character. A box whose content is wider than
+ * its border is a silent visual defect that no assertion catches, so the width
+ * is one value and over-long lines are truncated rather than left to spill.
  */
-function printRestartNotice(): void {
-  console.log('┌─────────────────────────────────────────────────────────────────┐');
-  console.log('│  ⚠️  Restart Claude Code to activate Ceetrix                     │');
-  console.log('│                                                                  │');
-  console.log('│  Claude Code does not auto-detect new MCP servers.               │');
-  console.log('│  Quit and reopen Claude Code, then describe a feature you        │');
-  console.log('│  want to build and ask Claude to "create a story for it".        │');
-  console.log('└─────────────────────────────────────────────────────────────────┘\n');
+const NOTICE_WIDTH = 65;
+
+/**
+ * Print a bordered notice whose sides line up.
+ *
+ * @param notice - Heading and body lines
+ */
+function printRestartNotice(notice: RestartNotice): void {
+  const border = '─'.repeat(NOTICE_WIDTH);
+  console.log(`┌${border}┐`);
+  for (const line of [notice.title, '', ...notice.lines]) {
+    console.log(`│  ${line.slice(0, NOTICE_WIDTH - 3).padEnd(NOTICE_WIDTH - 2)}│`);
+  }
+  console.log(`└${border}┘\n`);
 }
 
 /**
  * Print notice for custom config file usage.
+ *
+ * @param configPath - Path the config was written to
  */
 function printCustomConfigNotice(configPath: string): void {
-  console.log('┌─────────────────────────────────────────────────────────────────┐');
-  console.log('│  Config written to custom file (not ~/.claude.json)             │');
-  console.log('│                                                                  │');
-  console.log('│  To use this config with Claude:                                 │');
-  console.log(`│    claude --mcp-config ${configPath}`);
-  console.log('│                                                                  │');
-  console.log('│  Your production ~/.claude.json was NOT modified.               │');
-  console.log('└─────────────────────────────────────────────────────────────────┘\n');
+  printRestartNotice({
+    title: 'Config written to a custom file, not ~/.claude.json',
+    lines: [
+      'To use this config with Claude:',
+      `  claude --mcp-config ${configPath}`,
+      '',
+      'Your production ~/.claude.json was NOT modified.',
+    ],
+  });
 }
 
-/**
- * Print restart notice for Codex CLI users.
- */
-function printCodexRestartNotice(): void {
-  console.log('┌─────────────────────────────────────────────────────────────────┐');
-  console.log('│  Restart Codex CLI to activate Ceetrix                          │');
-  console.log('│                                                                  │');
-  console.log('│  Quit and reopen Codex, then describe a feature you             │');
-  console.log('│  want to build and ask Codex to "create a story for it".        │');
-  console.log('└─────────────────────────────────────────────────────────────────┘\n');
-}
