@@ -6,13 +6,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 
+import {
+  CLAUDE_CODE_VERSION_MARKER,
+  COMMON_CLAUDE_PATHS,
+  VERSION_CHECK_TIMEOUT_MS,
+} from '../src/claude.js';
+
 const execAsync = promisify(exec);
-
-/** Expected marker in Claude Code version output */
-const CLAUDE_CODE_VERSION_MARKER = 'Claude Code';
-
-/** Version check timeout */
-const VERSION_CHECK_TIMEOUT_MS = 3000;
 
 describe('Claude Code version marker', () => {
   it('marker constant is correct', () => {
@@ -41,13 +41,9 @@ describe('Claude Code version marker', () => {
 });
 
 describe('common Claude paths', () => {
-  const COMMON_CLAUDE_PATHS = [
-    '/opt/homebrew/bin/claude', // macOS Homebrew ARM
-    '/usr/local/bin/claude', // macOS Homebrew Intel / Linux
-    '/usr/bin/claude', // Linux system package
-    '/snap/bin/claude', // Linux Snap package
-    `${process.env.HOME}/.local/bin/claude`, // pip/pipx style installs
-  ];
+  // Asserted against the list claude.ts actually uses. These six cases
+  // previously ran against a copy declared here in the test file, so deleting
+  // the real list would not have failed any of them (story 547.10).
 
   it('includes Homebrew ARM path', () => {
     expect(COMMON_CLAUDE_PATHS).toContain('/opt/homebrew/bin/claude');

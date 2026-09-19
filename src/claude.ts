@@ -45,8 +45,13 @@ export const COMMON_CLAUDE_PATHS = [
   `${process.env.HOME}/.local/bin/claude`, // pip/pipx style installs
 ];
 
-/** Short timeout for version check (old versions may hang) */
-const VERSION_CHECK_TIMEOUT_MS = 3000;
+/**
+ * Short timeout for version check (old versions may hang).
+ *
+ * Exported so the detection tests assert against the value actually used,
+ * rather than against a copy declared inside the test file.
+ */
+export const VERSION_CHECK_TIMEOUT_MS = 3000;
 
 /** Cached path to claude executable */
 let cachedClaudePath: string | null = null;
