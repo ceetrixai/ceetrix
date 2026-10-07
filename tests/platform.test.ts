@@ -63,6 +63,9 @@ vi.mock('../src/prompts.js', () => ({
 // Mock consent - auto-accept in tests (Story 463)
 vi.mock('../src/consent.js', () => ({
   requestConsentOrExit: vi.fn().mockResolvedValue(undefined),
+  // null = no stored API key, so main() falls through to the consent prompt.
+  // Added when main() started reading stored consent; without it every case
+  // here fails on the missing export rather than on the platform check.
   getStoredConsentStatus: vi.fn().mockResolvedValue(null),
   CURRENT_TERMS_VERSION: '2026-03-23',
 }));
