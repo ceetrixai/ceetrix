@@ -11,17 +11,26 @@
  *
  * OpenCode is one of only two of those harnesses with a real non-interactive
  * check, so this suite asserts more than the file contents.
+ *
+ * OpenCode 2 answers `opencode mcp list` from a shared background service
+ * holding the developer's own configuration, which the temp root never
+ * reaches. Each check therefore asks a private server started on the temp
+ * root (see opencode-server.ts), and the temp configuration carries a control
+ * server whose appearance shows the file has been loaded.
  */
 
 import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm, mkdir, readFile, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
 import which from 'which';
-
-const execFileAsync = promisify(execFile);
+import {
+  CONTROL_SERVER_ENTRY,
+  CONTROL_SERVER_NAME,
+  startOpencodeServer,
+  waitForMcpServer,
+  type McpServerStatus,
+} from './opencode-server.js';
 
 const TEST_API_KEY = 'test_api_key_not_real';
 const TEST_MCP_URL = 'https://api.ceetrix.com/mcp';
@@ -43,20 +52,6 @@ async function findOpencode(): Promise<string | null> {
   } catch {
     return null;
   }
-}
-
-/**
- * Environment for running opencode against the temp configuration root.
- *
- * XDG_CONFIG_HOME must be set explicitly rather than inherited. The Codex
- * template overrides HOME only, which is not enough here: opencode reads a
- * nested config path and honours the XDG variable, so an ambient value in the
- * developer's shell would point it at their real configuration.
- *
- * @returns Environment for the child process
- */
-function opencodeEnv(): NodeJS.ProcessEnv {
-  return { ...process.env, XDG_CONFIG_HOME: tempConfigRoot };
 }
 
 /**
@@ -90,16 +85,31 @@ async function removeViaHarness(): Promise<void> {
 }
 
 /**
- * Run `opencode mcp list` against the temp configuration root.
+ * The MCP servers opencode loads from the temp configuration root, read from a
+ * private server once it has loaded the file (the control server is listed).
  *
- * @returns Combined output
+ * @returns Every server opencode reports, with its connection status
  */
-async function runMcpList(): Promise<string> {
-  const { stdout, stderr } = await execFileAsync(opencodePath!, ['mcp', 'list'], {
-    timeout: OPENCODE_TIMEOUT_MS,
-    env: opencodeEnv(),
+async function listedServers(): Promise<McpServerStatus[]> {
+  const server = await startOpencodeServer({
+    binary: opencodePath!,
+    configRoot: tempConfigRoot,
+    cwd: tempConfigRoot,
   });
-  return `${stdout}${stderr}`;
+  try {
+    return await waitForMcpServer(opencodePath!, server, tempConfigRoot, CONTROL_SERVER_NAME);
+  } finally {
+    await server.stop();
+  }
+}
+
+/**
+ * Names of the servers opencode loads.
+ *
+ * @returns Server names
+ */
+async function listedNames(): Promise<string[]> {
+  return (await listedServers()).map((s) => s.name);
 }
 
 /**
@@ -119,6 +129,11 @@ describe('OpenCode integration: config → parse → list', () => {
   beforeEach(async () => {
     tempConfigRoot = await mkdtemp(join(tmpdir(), 'opencode-integration-'));
     await mkdir(join(tempConfigRoot, 'opencode'), { recursive: true });
+    await writeFile(
+      configPath(),
+      `${JSON.stringify({ $schema: 'https://opencode.ai/config.json', mcp: { [CONTROL_SERVER_NAME]: CONTROL_SERVER_ENTRY } }, null, 2)}\n`,
+      'utf-8'
+    );
   });
 
   afterEach(async () => {
@@ -132,15 +147,17 @@ describe('OpenCode integration: config → parse → list', () => {
     }
 
     await addViaHarness();
-    const output = await runMcpList();
+    const ceetrix = (await listedServers()).find((s) => s.name === 'ceetrix');
 
     // The credential above is deliberately invalid, so a failure here is the
     // expected result — and it proves more than a success would at this point.
     // It shows opencode parsed the file, recognised the entry as a remote
-    // server, resolved the URL and reached Ceetrix. A green result alone
-    // cannot distinguish "correct" from "never attempted".
-    expect(output).toContain('ceetrix');
-    expect(output).toContain('api.ceetrix.com/mcp');
+    // server, resolved the URL and reached Ceetrix, whose refusal names the
+    // header it rejected. A green result alone cannot distinguish "correct"
+    // from "never attempted".
+    expect(ceetrix, 'opencode did not load the entry Ceetrix wrote').toBeDefined();
+    expect(ceetrix!.status.status).toBe('failed');
+    expect(ceetrix!.status.error).toContain('X-API-Key');
   }, OPENCODE_TIMEOUT_MS);
 
   it('lists nothing named ceetrix before the config is written', async () => {
@@ -149,8 +166,7 @@ describe('OpenCode integration: config → parse → list', () => {
       return;
     }
 
-    const output = await runMcpList();
-    expect(output).not.toContain('ceetrix');
+    expect(await listedNames()).not.toContain('ceetrix');
   }, OPENCODE_TIMEOUT_MS);
 
   it('removal takes the entry back out of what opencode reports', async () => {
@@ -160,10 +176,10 @@ describe('OpenCode integration: config → parse → list', () => {
     }
 
     await addViaHarness();
-    expect(await runMcpList()).toContain('ceetrix');
+    expect(await listedNames()).toContain('ceetrix');
 
     await removeViaHarness();
-    expect(await runMcpList()).not.toContain('ceetrix');
+    expect(await listedNames()).not.toContain('ceetrix');
   }, OPENCODE_TIMEOUT_MS);
 
   it('leaves a realistic config byte-identical after add then remove', async () => {

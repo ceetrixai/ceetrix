@@ -112,6 +112,11 @@ describe('DeepSeek Harness integration: patch → compose → mounted', () => {
     // Copy rather than mutate: the developer's own profiles carry their real
     // routing choices and their own written notes.
     await cp(join(homedir(), '.dsh'), tempDshHome, { recursive: true });
+    // A developer who has run Ceetrix's installer has the entry already, and
+    // these cases need a profile without it: otherwise "mounted after add"
+    // passes with nothing added, and "absent before add" cannot pass. It is
+    // taken out of the copy only.
+    await viaHarness('remove');
   });
 
   afterEach(async () => {
