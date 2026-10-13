@@ -82,7 +82,7 @@ async function viaHarness(
     } else if (action === 'remove') {
       await mod.harness.remove();
     }
-    return mod.getConfigPath();
+    return await mod.getConfigPath();
   } finally {
     process.env.HOME = previousHome;
   }

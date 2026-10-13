@@ -51,6 +51,7 @@ beforeEach(async () => {
   binaryPath = '/fake/bin/pi';
   mockRun.mockReset();
   vi.resetModules();
+  await installAdapter(ADAPTER_WITH_OWN_FILE);
 });
 
 afterEach(async () => {
@@ -67,13 +68,44 @@ async function loadPi() {
   return import('../src/pi.js');
 }
 
+/** The adapter release that moved its config to its own file. */
+const ADAPTER_WITH_OWN_FILE = '5.3.0';
+
+/** An adapter release from before that move, which reads pi's mcp.json. */
+const ADAPTER_READING_MCP_JSON = '2.34.0';
+
+/** Where the adapter's own user-level config lives, from 3.0.0 on. */
+function adapterFilePath(): string {
+  return join(tempHome, '.pi', 'agent', 'mcp-adapter.json');
+}
+
+/** pi's own user-level MCP config, which adapters before 3.0.0 read. */
+function piFilePath(): string {
+  return join(tempHome, '.pi', 'agent', 'mcp.json');
+}
+
+/** Install directory of the adapter, as `pi list` reports it. */
+function adapterDir(): string {
+  return join(tempHome, '.pi', 'agent', 'npm', 'node_modules', 'pi-mcp-adapter');
+}
+
 /**
- * Path pi's user-level MCP config should be written to.
+ * Put an adapter of the given version where `pi list` will say it is.
+ *
+ * @param version - The adapter's package.json version
+ */
+async function installAdapter(version: string): Promise<void> {
+  await mkdir(adapterDir(), { recursive: true });
+  await writeFile(join(adapterDir(), 'package.json'), JSON.stringify({ name: 'pi-mcp-adapter', version }), 'utf-8');
+}
+
+/**
+ * Path the installed adapter reads, for the default adapter in these tests.
  *
  * @returns Absolute path
  */
 function configPath(): string {
-  return join(tempHome, '.pi', 'agent', 'mcp.json');
+  return adapterFilePath();
 }
 
 /**
@@ -90,16 +122,21 @@ async function configExists(): Promise<boolean> {
   }
 }
 
-/** `pi list` output when the adapter is present. Matches the real format. */
-const LIST_WITH_ADAPTER =
-  'User packages:\n  npm:pi-mcp-adapter\n    /home/someone/.pi/agent/npm/node_modules/pi-mcp-adapter\n';
+/**
+ * `pi list` output when the adapter is present. Matches the real format.
+ *
+ * @returns The output, naming this test's adapter directory
+ */
+function listWithAdapter(): string {
+  return `User packages:\n  npm:pi-mcp-adapter\n    ${adapterDir()}\n`;
+}
 
 /** `pi list` output when nothing is installed. Matches the real format. */
 const LIST_EMPTY = 'No packages installed.\n';
 
 describe('pi add ordering', () => {
   it('TC-23: does not install the adapter again when it is already present', async () => {
-    mockRun.mockResolvedValue(LIST_WITH_ADAPTER);
+    mockRun.mockResolvedValue(listWithAdapter());
 
     const { harness } = await loadPi();
     await harness.add({ apiKey: TEST_KEY, url: TEST_URL });
@@ -113,7 +150,8 @@ describe('pi add ordering', () => {
     mockRun
       .mockResolvedValueOnce(LIST_EMPTY) // first check: absent
       .mockResolvedValueOnce('Installed') // the install
-      .mockResolvedValueOnce(LIST_WITH_ADAPTER); // confirmation
+      .mockResolvedValueOnce(listWithAdapter()) // confirmation
+      .mockResolvedValueOnce(listWithAdapter()); // where it is, for its version
 
     const { harness } = await loadPi();
     await harness.add({ apiKey: TEST_KEY, url: TEST_URL });
@@ -175,7 +213,7 @@ describe('pi add ordering', () => {
 
 describe('pi entry shape', () => {
   beforeEach(() => {
-    mockRun.mockResolvedValue(LIST_WITH_ADAPTER);
+    mockRun.mockResolvedValue(listWithAdapter());
   });
 
   it('writes url and credential header, and no type key', async () => {
@@ -209,7 +247,7 @@ describe('pi entry shape', () => {
 
 describe('pi remove', () => {
   beforeEach(() => {
-    mockRun.mockResolvedValue(LIST_WITH_ADAPTER);
+    mockRun.mockResolvedValue(listWithAdapter());
   });
 
   it('TC-25: removes the connection and does not uninstall the adapter', async () => {
@@ -248,7 +286,7 @@ describe('pi remove', () => {
 
 describe('pi isConfigured', () => {
   it('is false before anything is written', async () => {
-    mockRun.mockResolvedValue(LIST_WITH_ADAPTER);
+    mockRun.mockResolvedValue(listWithAdapter());
     const { harness } = await loadPi();
     expect(await harness.isConfigured()).toBe(false);
   });
@@ -256,7 +294,7 @@ describe('pi isConfigured', () => {
   it('reports on the config file, not on whether the adapter is installed', async () => {
     // The adapter being present says nothing about whether Ceetrix is
     // registered; only the file does.
-    mockRun.mockResolvedValue(LIST_WITH_ADAPTER);
+    mockRun.mockResolvedValue(listWithAdapter());
     const { harness } = await loadPi();
     expect(await harness.isConfigured()).toBe(false);
   });
@@ -266,7 +304,7 @@ describe('pi contract', () => {
   it('TC-26: annotated settings are not applicable, so no refusal path exists', async () => {
     // pi's MCP configuration is plain data with no comment form, unlike
     // DeepSeek Harness's. Recorded as an explicit non-behaviour.
-    mockRun.mockResolvedValue(LIST_WITH_ADAPTER);
+    mockRun.mockResolvedValue(listWithAdapter());
     const { harness } = await loadPi();
     await harness.add({ apiKey: TEST_KEY, url: TEST_URL });
     expect(await harness.isConfigured()).toBe(true);
@@ -279,5 +317,74 @@ describe('pi contract', () => {
     // be silent about what is now on their machine.
     expect(notice.lines.join(' ')).toContain('pi-mcp-adapter');
     expect(notice.lines.join(' ')).toContain('third-party');
+  });
+});
+
+describe('pi config file follows the installed adapter', () => {
+  // pi-mcp-adapter 3.0.0 stopped reading pi's ~/.pi/agent/mcp.json and reads
+  // its own mcp-adapter.json instead. `pi install npm:pi-mcp-adapter` gets the
+  // latest release, so a new install wrote a file the adapter never read.
+
+  it('writes the adapter\'s own file, not mcp.json, for adapter 3.0.0 and later', async () => {
+    mockRun.mockResolvedValue(listWithAdapter());
+
+    const { harness } = await loadPi();
+    await harness.add({ apiKey: TEST_KEY, url: TEST_URL });
+
+    const entry = JSON.parse(await readFile(adapterFilePath(), 'utf-8')).mcpServers.ceetrix;
+    expect(entry.url).toBe(TEST_URL);
+    await expect(readFile(piFilePath(), 'utf-8')).rejects.toThrow();
+  });
+
+  it('writes mcp.json for an adapter older than 3.0.0, which reads only that file', async () => {
+    await installAdapter(ADAPTER_READING_MCP_JSON);
+    mockRun.mockResolvedValue(listWithAdapter());
+
+    const { harness } = await loadPi();
+    await harness.add({ apiKey: TEST_KEY, url: TEST_URL });
+
+    const entry = JSON.parse(await readFile(piFilePath(), 'utf-8')).mcpServers.ceetrix;
+    expect(entry.url).toBe(TEST_URL);
+    await expect(readFile(adapterFilePath(), 'utf-8')).rejects.toThrow();
+  });
+
+  it('moves an earlier install\'s entry out of mcp.json and keeps the person\'s own servers there', async () => {
+    await mkdir(join(tempHome, '.pi', 'agent'), { recursive: true });
+    await writeFile(
+      piFilePath(),
+      JSON.stringify({ mcpServers: { theirs: { url: 'https://theirs' }, ceetrix: { url: 'https://old' } } }),
+      'utf-8'
+    );
+    mockRun.mockResolvedValue(listWithAdapter());
+
+    const { harness } = await loadPi();
+    await harness.add({ apiKey: TEST_KEY, url: TEST_URL });
+
+    const left = JSON.parse(await readFile(piFilePath(), 'utf-8')).mcpServers;
+    expect(left).toEqual({ theirs: { url: 'https://theirs' } });
+    expect(JSON.parse(await readFile(adapterFilePath(), 'utf-8')).mcpServers.ceetrix.url).toBe(TEST_URL);
+  });
+
+  it('remove takes the entry out of both files', async () => {
+    await mkdir(join(tempHome, '.pi', 'agent'), { recursive: true });
+    await writeFile(piFilePath(), JSON.stringify({ mcpServers: { ceetrix: { url: 'https://old' } } }), 'utf-8');
+    await writeFile(adapterFilePath(), JSON.stringify({ mcpServers: { ceetrix: { url: TEST_URL } } }), 'utf-8');
+    mockRun.mockResolvedValue(listWithAdapter());
+
+    const { harness } = await loadPi();
+    await harness.remove();
+
+    await expect(readFile(piFilePath(), 'utf-8')).rejects.toThrow();
+    await expect(readFile(adapterFilePath(), 'utf-8')).rejects.toThrow();
+  });
+
+  it('refuses and writes nothing when the adapter\'s version cannot be read', async () => {
+    await rm(join(adapterDir(), 'package.json'));
+    mockRun.mockResolvedValue(listWithAdapter());
+
+    const { harness } = await loadPi();
+    await expect(harness.add({ apiKey: TEST_KEY, url: TEST_URL })).rejects.toThrow(/version/);
+    await expect(readFile(adapterFilePath(), 'utf-8')).rejects.toThrow();
+    await expect(readFile(piFilePath(), 'utf-8')).rejects.toThrow();
   });
 });

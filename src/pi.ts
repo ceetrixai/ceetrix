@@ -15,13 +15,20 @@
  * Ceetrix runs, and it is a real dependency on a third party that Ceetrix does
  * not control.
  *
- * Order matters: the extension is what reads mcp.json, so it is installed
+ * Order matters: the extension is what reads the config, so it is installed
  * first. If the install fails, this module throws rather than writing a config
  * file that nothing would ever read.
+ *
+ * Which file the extension reads depends on its version. pi-mcp-adapter 3.0.0
+ * stopped reading pi's `~/.pi/agent/mcp.json` and reads its own
+ * `~/.pi/agent/mcp-adapter.json` instead (same format). `pi install` fetches
+ * the latest release, so the file is chosen from the installed version rather
+ * than assumed.
  */
 
 import { join } from 'path';
 import { homedir } from 'os';
+import { readFile } from 'fs/promises';
 import {
   cachedBinary,
   runHarnessCommand,
@@ -70,8 +77,14 @@ const PI_HOME_DIR = '.pi';
 /** Agent directory under the pi root. */
 const PI_AGENT_DIR = 'agent';
 
-/** MCP config filename read by the adapter. */
+/** pi's own MCP config filename, read by adapters before 3.0.0. */
 const PI_MCP_FILE = 'mcp.json';
+
+/** The adapter's own config filename, read by adapters from 3.0.0 on. */
+const PI_ADAPTER_MCP_FILE = 'mcp-adapter.json';
+
+/** First adapter major version that reads its own file instead of pi's. */
+const ADAPTER_OWN_FILE_MAJOR = 3;
 
 /** Top-level key holding the server map. */
 const PI_CONTAINER_KEY = 'mcpServers';
@@ -105,21 +118,63 @@ const binary = cachedBinary({
 });
 
 /**
- * Path to the pi-owned user-scope MCP config file.
+ * Paths of the two user-scope files a pi adapter may read.
  *
- * The adapter reads six files in ascending precedence:
- * `~/.config/mcp/mcp.json`, `~/.agents/mcp.json`, `~/.agents/mcp/mcp.json`,
- * `~/.pi/agent/mcp.json`, `.mcp.json`, `.pi/mcp.json`. Ceetrix writes the
- * fourth: the highest-precedence file that is pi's own rather than shared with
- * other tools, and user-scoped rather than committed into a project.
+ * Ceetrix writes the user-scope file that belongs to pi or its adapter rather
+ * than one shared with other tools (`~/.config/mcp/mcp.json`,
+ * `~/.agents/...`), and never a project-scope file. Project files outrank it,
+ * so a project that defines its own `ceetrix` entry wins; that is the user's
+ * choice and is left alone.
  *
- * The two project-scope files outrank it, so a project that defines its own
- * `ceetrix` entry wins. That is the user's choice and is left alone.
- *
- * @returns Absolute path to pi's user-level mcp.json
+ * @returns Absolute paths of pi's mcp.json and the adapter's mcp-adapter.json
  */
-export function getConfigPath(): string {
-  return join(homedir(), PI_HOME_DIR, PI_AGENT_DIR, PI_MCP_FILE);
+function userConfigPaths(): { pi: string; adapter: string } {
+  const agentDir = join(homedir(), PI_HOME_DIR, PI_AGENT_DIR);
+  return { pi: join(agentDir, PI_MCP_FILE), adapter: join(agentDir, PI_ADAPTER_MCP_FILE) };
+}
+
+/**
+ * The installed adapter's directory, from `pi list`.
+ *
+ * `pi list` prints the package source and, on the next line, where it is
+ * installed.
+ *
+ * @returns Absolute directory, or null when the adapter is not listed
+ */
+async function adapterInstallDir(): Promise<string | null> {
+  const path = await binary.get();
+  if (!path) return null;
+  const lines = (await runHarnessCommand(`"${path}" list`)).split('\n').map((l) => l.trim());
+  const at = lines.findIndex((l) => l.endsWith(PI_MCP_ADAPTER_PACKAGE));
+  return at >= 0 && lines[at + 1] ? lines[at + 1] : null;
+}
+
+/**
+ * Path of the user-scope config file the installed adapter reads.
+ *
+ * @returns mcp-adapter.json for adapter 3.0.0 and later, else mcp.json
+ * @throws Error when the adapter's version cannot be read; guessing would
+ *   risk writing a file the adapter ignores, the failure this exists to stop
+ */
+export async function getConfigPath(): Promise<string> {
+  const dir = await adapterInstallDir();
+  const manifest = dir ? join(dir, 'package.json') : null;
+  let version: string | undefined;
+  try {
+    version = manifest ? JSON.parse(await readFile(manifest, 'utf-8')).version : undefined;
+  } catch {
+    version = undefined;
+  }
+  const major = version ? Number.parseInt(version.split('.')[0], 10) : Number.NaN;
+  if (Number.isNaN(major)) {
+    throw new Error(
+      `Could not read the installed ${PI_MCP_ADAPTER_PACKAGE} version` +
+        `${manifest ? ` from ${manifest}` : ' ("pi list" does not show where it is installed)'}. ` +
+        `Its version decides which file it reads, so Ceetrix has not written pi's MCP config.`
+    );
+  }
+  const paths = userConfigPaths();
+  return major >= ADAPTER_OWN_FILE_MAJOR ? paths.adapter : paths.pi;
 }
 
 /**
@@ -166,7 +221,7 @@ async function ensureAdapterInstalled(): Promise<void> {
   }
 
   // The install command can exit zero without the extension registering.
-  // Writing mcp.json in that state would produce a config nothing reads, so
+  // Writing the config in that state would produce a config nothing reads, so
   // the result is checked rather than assumed.
   if (!(await isAdapterInstalled())) {
     throw new Error(
@@ -201,30 +256,45 @@ export const harness = {
 
   isConfigured: async () =>
     hasMcpEntry({
-      filePath: getConfigPath(),
+      filePath: await getConfigPath(),
       containerKey: PI_CONTAINER_KEY,
       serverName: CEETRIX_MCP_SERVER_NAME,
     }),
 
   add: async (spec: HarnessAddSpec) => {
     await ensureAdapterInstalled();
+    const target = await getConfigPath();
     await writeMcpEntry({
-      filePath: getConfigPath(),
+      filePath: target,
       containerKey: PI_CONTAINER_KEY,
       serverName: CEETRIX_MCP_SERVER_NAME,
       entry: buildEntry(spec),
     });
+    // An earlier install may have written the other file, which this adapter
+    // does not read; Ceetrix's own entry there is taken out so only one
+    // copy remains. Anything else in that file is the person's and stays.
+    for (const other of Object.values(userConfigPaths()).filter((p) => p !== target)) {
+      await removeMcpEntry({
+        filePath: other,
+        containerKey: PI_CONTAINER_KEY,
+        serverName: CEETRIX_MCP_SERVER_NAME,
+      });
+    }
   },
 
   // The adapter extension is deliberately left installed. Ceetrix did not own
   // pi's MCP support before this, and the adapter may be serving servers the
   // user configured themselves; uninstalling it would take those down too.
+  // Both files are cleared, so removal works whichever one an earlier install
+  // wrote and needs no adapter version.
   remove: async () => {
-    await removeMcpEntry({
-      filePath: getConfigPath(),
-      containerKey: PI_CONTAINER_KEY,
-      serverName: CEETRIX_MCP_SERVER_NAME,
-    });
+    for (const filePath of Object.values(userConfigPaths())) {
+      await removeMcpEntry({
+        filePath,
+        containerKey: PI_CONTAINER_KEY,
+        serverName: CEETRIX_MCP_SERVER_NAME,
+      });
+    }
   },
 
   restartNotice: (): RestartNotice => ({
@@ -243,7 +313,7 @@ export const harness = {
 
   diagnose: async () => {
     const path = await binary.get();
-    const configPath = getConfigPath();
+    const configPath = await getConfigPath().catch((error: Error) => error.message);
     return [
       `binary: ${path || 'not found'}`,
       `adapter: ${(await isAdapterInstalled()) ? PI_MCP_ADAPTER_PACKAGE : 'not installed'}`,
