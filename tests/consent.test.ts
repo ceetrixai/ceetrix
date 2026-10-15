@@ -76,6 +76,25 @@ describe('consent helpers (Story 463)', () => {
     });
   });
 
+  it('the consent box says specifications are processed by AI services, names no provider, and keeps its width', async () => {
+    const { confirm } = await import('@inquirer/prompts');
+    vi.mocked(confirm).mockResolvedValue(true);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const { requestConsentOrExit } = await import('../src/consent.js');
+    await requestConsentOrExit();
+
+    const lines = logSpy.mock.calls.map((call) => String(call[0]));
+    const box = lines.filter((line) => /^[│┌└]/.test(line));
+    expect(box.some((line) => line.includes('processed by AI services'))).toBe(true);
+    // Gemini is no longer used (2026-10-15); the consent text names no provider.
+    expect(lines.join('\n')).not.toMatch(/gemini|google/i);
+    const width = box[0].length;
+    for (const line of box) expect(line.length).toBe(width);
+
+    logSpy.mockRestore();
+  });
+
   it('exits with an explanatory message when the user declines consent', async () => {
     const { confirm } = await import('@inquirer/prompts');
     vi.mocked(confirm).mockResolvedValue(false);

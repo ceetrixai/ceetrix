@@ -143,18 +143,18 @@ export async function getStoredConsentStatus(
  */
 export async function requestConsentOrExit(): Promise<void> {
   console.log('');
-  console.log('┌─ Terms of Service & Privacy Policy ─────────────────────────┐');
+  console.log('┌─ Terms of Service & Privacy Policy ──────────────────────────┐');
   console.log('│                                                              │');
-  console.log('│  By continuing, you agree to:                               │');
+  console.log('│  By continuing, you agree to:                                │');
   console.log('│                                                              │');
-  console.log(`│  • Terms of Service                                         │`);
-  console.log(`│    ${(LEGAL_BASE_URL + '/tos').padEnd(56)}│`);
+  console.log(`│  • Terms of Service                                          │`);
+  console.log(`│    ${(LEGAL_BASE_URL + '/tos').padEnd(58)}│`);
   console.log('│                                                              │');
-  console.log(`│  • Privacy Policy                                           │`);
-  console.log(`│    ${(LEGAL_BASE_URL + '/privacy').padEnd(56)}│`);
+  console.log(`│  • Privacy Policy                                            │`);
+  console.log(`│    ${(LEGAL_BASE_URL + '/privacy').padEnd(58)}│`);
   console.log('│                                                              │');
-  console.log('│  Your specifications are processed by Google Gemini.        │');
-  console.log('│  See Privacy Policy for details.                            │');
+  console.log('│  Your specifications are processed by AI services.           │');
+  console.log('│  See Privacy Policy for details.                             │');
   console.log('│                                                              │');
   console.log('└──────────────────────────────────────────────────────────────┘');
   console.log('');
