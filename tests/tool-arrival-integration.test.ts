@@ -28,6 +28,7 @@ import { tmpdir, homedir } from 'os';
 import { join } from 'path';
 import { spawn } from 'child_process';
 import which from 'which';
+import { startOpencodeServer, waitForMcpServer } from './opencode-server.js';
 import { fileExists } from '../src/json-mcp-config.js';
 
 /**
@@ -81,8 +82,9 @@ const TEST_QUERY = 'harness';
  *
  * pi reaches Ceetrix through the adapter's proxy tool rather than directly
  * named tools, so it is told to name the server and the tool. Instructing the
- * others that way would test a path they do not have. This is the only place
- * the agents genuinely need different words.
+ * others that way would test a path they do not have. OpenCode is told the
+ * reply's form, for the reason given below. These are the only places the
+ * agents genuinely need different words.
  *
  * @param agent - Which harness
  * @returns The prompt
@@ -91,9 +93,44 @@ function readPrompt(agent: string): string {
   const task =
     `the ceetrix search tool with query '${TEST_QUERY}' and remote_url ` +
     `'${TEST_REMOTE}'. Report only the number of matches.`;
-  return agent === 'pi'
-    ? `Use the mcp tool with server 'ceetrix' and tool 'search' to call ${task}`
-    : `Call ${task}`;
+  if (agent === 'pi') return `Use the mcp tool with server 'ceetrix' and tool 'search' to call ${task}`;
+  // OpenCode 2 hands MCP tools to the model as a code API inside its execute
+  // tool, so the model reads the reply only through code it writes. Left to
+  // write that code itself, gpt-oss-120b parsed the reply as JSON fields it
+  // does not have, or dropped the await, in 2 of 5 runs, and reported a
+  // number of its own making. It is given the call instead: this suite tests
+  // that the tool arrives, not the model's coding. The assertion is
+  // unchanged: the count must be the one staging returns.
+  if (agent === 'opencode') {
+    return (
+      `Run the execute tool with exactly this code: ` +
+      `return await tools.ceetrix.search({ query: '${TEST_QUERY}', remote_url: '${TEST_REMOTE}' }); ` +
+      `It returns plain text that begins "Found N matches". Report only N.`
+    );
+  }
+  return `Call ${task}`;
+}
+
+/**
+ * The write prompt, per agent. OpenCode is given the exact call, for the
+ * reason given in readPrompt.
+ *
+ * @param agent - Which harness
+ * @param marker - The comment body to create
+ * @returns The prompt
+ */
+function writePrompt(agent: string, marker: string): string {
+  if (agent === 'opencode') {
+    return (
+      `Run the execute tool with exactly this code: ` +
+      `return await tools.ceetrix.comment({ action: 'create', story_id: '${STAGING_STORY_ID}', ` +
+      `remote_url: '${TEST_REMOTE}', body: '${marker}' });`
+    );
+  }
+  return (
+    `Use the ceetrix comment tool, action create, story_id ${STAGING_STORY_ID}, ` +
+    `remote_url '${TEST_REMOTE}', body exactly: ${marker}`
+  );
 }
 
 /** Pulls the count out of Ceetrix's "Found N matches for ..." reply. */
@@ -320,6 +357,8 @@ interface AgentRunner {
   args: (prompt: string) => string[];
   /** Empty directory to run in, so no project instruction files are read. */
   cwd: string;
+  /** Stops anything the agent needed started for it; absent when nothing was. */
+  stop?: () => Promise<void>;
 }
 
 /**
@@ -352,13 +391,37 @@ async function configureAgent(agent: 'opencode' | 'pi' | 'omp' | 'dsh'): Promise
     if (previous === undefined) delete process.env.XDG_CONFIG_HOME;
     else process.env.XDG_CONFIG_HOME = previous;
 
+    // OpenCode 2 runs `opencode run` through a shared background service that
+    // holds the developer's own configuration, so XDG_CONFIG_HOME alone would
+    // send these calls to whatever Ceetrix server that names, production
+    // included. A private server reads only the sandbox configuration; the
+    // case refuses to run unless that server has connected to Ceetrix.
+    const written = JSON.parse(await readFile(join(configRoot, 'opencode', 'opencode.json'), 'utf-8'));
+    if (written?.mcp?.ceetrix?.url !== STAGING_MCP_URL) {
+      throw new Error(`the sandbox's opencode config does not point ceetrix at staging: ${written?.mcp?.ceetrix?.url}`);
+    }
+    const server = await startOpencodeServer({ binary: (await find('opencode'))!, configRoot, cwd: workdir });
+    try {
+      const listed = await waitForMcpServer((await find('opencode'))!, server, workdir, 'ceetrix');
+      const ceetrix = listed.find((s) => s.name === 'ceetrix')!;
+      if (ceetrix.status.status !== 'connected') {
+        throw new Error(`the sandbox's opencode server did not connect to staging: ${JSON.stringify(ceetrix.status)}`);
+      }
+    } catch (error) {
+      await server.stop();
+      throw error;
+    }
+
     return {
       cwd: workdir,
-      env: { ...process.env, XDG_CONFIG_HOME: configRoot },
+      env: server.clientEnv,
+      stop: server.stop,
       args: (prompt) => [
         'run',
+        '--server',
+        server.url,
         '--log-level',
-        'ERROR',
+        'error',
         '--model',
         `${TEST_PROVIDER}/${TEST_MODEL}`,
         prompt,
@@ -481,7 +544,12 @@ describe('the model can READ through a Ceetrix tool', () => {
 
     const expected = await trueMatchCount();
     const runner = await configureAgent(key);
-    const output = await runAgent(path!, runner.args(readPrompt(key)), runner.env, runner.cwd);
+    let output: string;
+    try {
+      output = await runAgent(path!, runner.args(readPrompt(key)), runner.env, runner.cwd);
+    } finally {
+      await runner.stop?.();
+    }
 
     expect(output.toLowerCase(), `${label} reported an error instead of a result`).not.toMatch(
       /no project context|failed to connect|tool not found|unable to connect/
@@ -503,15 +571,16 @@ describe('the model can WRITE through a Ceetrix tool', () => {
 
     const marker = writeMarker(key);
     const runner = await configureAgent(key);
-    await runAgent(
-      path!,
-      runner.args(
-        `Use the ceetrix comment tool, action create, story_id ${STAGING_STORY_ID}, ` +
-          `remote_url '${TEST_REMOTE}', body exactly: ${marker}`
-      ),
-      runner.env,
-      runner.cwd
-    );
+    try {
+      await runAgent(
+        path!,
+        runner.args(writePrompt(key, marker)),
+        runner.env,
+        runner.cwd
+      );
+    } finally {
+      await runner.stop?.();
+    }
 
     // Read back over a connection the agent had nothing to do with. What the
     // agent said about its own success is not evidence: in the manual runs
