@@ -31,7 +31,7 @@ import {
 } from './constants.js';
 import { stateRoot, readCache, writeCache, deleteCache, sweepCaches } from './cache.js';
 import { resolveCredentials, createClient, type HookClient } from './client.js';
-import { decidePreWrite, decidePrompt, decideTurnEnd, decidePostTool, type TaskStatusResult } from './decide.js';
+import { decidePreWrite, decideInternalFailure, decidePrompt, decideTurnEnd, decidePostTool, type TaskStatusResult, type PreWriteDecision } from './decide.js';
 import {
   CLAUDE_CODE_EVENTS,
   readPayload,
@@ -251,11 +251,16 @@ async function onPrompt(ctx: Context): Promise<string> {
 
 function onPreTool(ctx: Context): string {
   const cache = readCache(ctx.root, ctx.host, ctx.sessionId);
-  const decision = decidePreWrite({
-    cache,
-    target: writeTargetFor(ctx.payload, ctx.deps.homeDir),
-    log: ctx.deps.log,
-  });
+  let decision: PreWriteDecision;
+  try {
+    decision = decidePreWrite({
+      cache,
+      target: writeTargetFor(ctx.payload, ctx.deps.homeDir),
+      log: ctx.deps.log,
+    });
+  } catch (err) {
+    decision = decideInternalFailure(cache, (err as Error).message, ctx.deps.log);
+  }
   if (decision.outcome === 'allow' && decision.degraded) {
     ctx.deps.log(`ceetrix-hook: write allowed unchecked (degraded: ${decision.degraded})`);
   }

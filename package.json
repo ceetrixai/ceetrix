@@ -1,6 +1,6 @@
 {
   "name": "ceetrix",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "Connect your coding agent to Ceetrix backlog management - Claude Code, Codex, pi, omp, OpenCode or DeepSeek Harness",
   "bin": {
     "ceetrix": "./bin/ceetrix.js"

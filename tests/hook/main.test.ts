@@ -191,6 +191,36 @@ describe('PreToolUse', () => {
     expect(gitCalls).toEqual([]);
   });
 
+  // Task 510.1: with the cache present, an internal failure on the per-write
+  // path is decided by the cached strictness, not silently allowed. A
+  // non-string scope pattern makes the glob matcher throw.
+  function corruptBoundCache(strictness: 'enforce' | 'advise' | 'none') {
+    writeCache(state, makeCache({
+      session_id: SESSION,
+      strictness,
+      binding: { ...makeBinding(), expected_scope: [42 as unknown as string] },
+    }));
+  }
+
+  it('an internal failure under enforce denies, naming the cause', async () => {
+    corruptBoundCache('enforce');
+    const parsed = JSON.parse(await run('PreToolUse', fixture('pre-tool-use-write')));
+    expect(parsed.hookSpecificOutput.permissionDecision).toBe('deny');
+    expect(parsed.hookSpecificOutput.permissionDecisionReason).toMatch(/^\[enforce\] Ceetrix could not check this write: .+/);
+  });
+
+  it('an internal failure under advise warns and allows, naming the cause', async () => {
+    corruptBoundCache('advise');
+    const parsed = JSON.parse(await run('PreToolUse', fixture('pre-tool-use-write')));
+    expect(parsed.hookSpecificOutput.permissionDecision).toBeUndefined();
+    expect(parsed.hookSpecificOutput.additionalContext).toMatch(/^Ceetrix \(advise\): this write was allowed\. Ceetrix could not check this write: .+/);
+  });
+
+  it('an internal failure under none outputs nothing', async () => {
+    corruptBoundCache('none');
+    expect(await run('PreToolUse', fixture('pre-tool-use-write'))).toBe('');
+  });
+
   it('a missing cache allows with no output and records degraded', async () => {
     expect(await run('PreToolUse', fixture('pre-tool-use-write'))).toBe('');
     expect(logLines.join('\n')).toMatch(/cache_missing/);

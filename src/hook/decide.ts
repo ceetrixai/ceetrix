@@ -24,7 +24,8 @@ export type PreWriteRule =
   | 'outside_scope'
   | 'unknown_target'
   | 'policy_invalid'
-  | 'no_project';
+  | 'no_project'
+  | 'internal_error';
 
 export type PreWriteDecision =
   | { outcome: 'allow'; degraded?: string }
@@ -74,6 +75,18 @@ function refuse(
   if (cache.strictness === 'enforce') return { outcome: 'deny', rule, message };
   const prefix = renderWording(cache.wording, 'hook.warn.prefix', {}, log);
   return { outcome: 'warn', rule, message: `${prefix}${message.replace(STRICTNESS_TAG, '')}` };
+}
+
+/**
+ * Task 510.1: the per-write decision itself failed. With a registered cache
+ * the cached strictness decides (enforce denies, advise warns, none allows);
+ * without one nothing is known, so the write is allowed and recorded degraded.
+ */
+export function decideInternalFailure(cache: SessionCache | null, error: string, log: Logger): PreWriteDecision {
+  if (!cache || !cache.registered || cache.strictness === 'none' || cache.strictness === null) {
+    return { outcome: 'allow', degraded: `internal_error: ${error}` };
+  }
+  return refuse(cache, 'internal_error', 'hook.deny.internal_error', { error }, log);
 }
 
 /** Repo-relative path, or null when the path is outside the repo. */

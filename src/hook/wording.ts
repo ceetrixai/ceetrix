@@ -6,9 +6,9 @@
  * absent or blank, and must match the server's defaults.ts text. Every
  * fallback is logged. A rendered message is never blank.
  *
- * hook.deny.no_project and hook.warn.no_project are not in the contract's key
- * list: they word the policy file's no_project setting, which the contract
- * names but gives no message for. The server does not serve them yet.
+ * hook.deny.no_project and hook.warn.no_project word the policy file's
+ * no_project setting; hook.deny.internal_error words a failure of the
+ * per-write decision itself. The server serves all three like the rest.
  */
 
 import type { Logger } from './types.js';
@@ -39,6 +39,8 @@ export const DEFAULT_WORDING = {
     "[${strictness}] Ceetrix could not determine which files this command writes, so it cannot check it against the task's rules.",
   'hook.deny.policy_invalid':
     "[${strictness}] .ceetrix/policy.yaml could not be read: ${error}. Fix the file; strictness is set in the project's settings, not in this file.",
+  'hook.deny.internal_error':
+    "[${strictness}] Ceetrix could not check this write: ${error}. Tell the developer that the hook failed; the write was not checked against the task's rules.",
   'hook.deny.no_project':
     'Ceetrix found no project for this repository, and .ceetrix/policy.yaml sets no_project: deny, so no file may be changed. Set this repository up in Ceetrix or change the policy.',
   'hook.warn.prefix': 'Ceetrix (advise): this write was allowed. ',
