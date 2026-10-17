@@ -1,0 +1,23 @@
+{
+    "session_id": "c6093c60-3fe5-4fcb-850f-e45d05dcc4ab",
+    "transcript_path": "/home/dev/.claude/projects/-home-dev-repo/c6093c60-3fe5-4fcb-850f-e45d05dcc4ab.jsonl",
+    "cwd": "/home/dev/repo",
+    "prompt_id": "0a93645d-f000-4c38-9a99-651b232b687f",
+    "permission_mode": "default",
+    "effort": {
+        "level": "medium"
+    },
+    "hook_event_name": "PreToolUse",
+    "tool_name": "mcp__ceetrix__task",
+    "tool_input": {
+        "action": "get",
+        "story_id": "510",
+        "seq": 22,
+        "remote_url": "git@github.com:boxabirds/claude-backlog.git"
+    },
+    "tool_use_id": "toolu_01RN1r9moZChzTXaGeyQRDe8",
+    "mcp_server": {
+        "name": "ceetrix",
+        "source": "user"
+    }
+}

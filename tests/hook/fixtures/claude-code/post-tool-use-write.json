@@ -1,0 +1,26 @@
+{
+    "session_id": "c6093c60-3fe5-4fcb-850f-e45d05dcc4ab",
+    "transcript_path": "/home/dev/.claude/projects/-home-dev-repo/c6093c60-3fe5-4fcb-850f-e45d05dcc4ab.jsonl",
+    "cwd": "/home/dev/repo",
+    "prompt_id": "0a93645d-f000-4c38-9a99-651b232b687f",
+    "permission_mode": "default",
+    "effort": {
+        "level": "medium"
+    },
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Write",
+    "tool_input": {
+        "file_path": "/home/dev/repo/b.txt",
+        "content": "x"
+    },
+    "tool_response": {
+        "type": "create",
+        "filePath": "/home/dev/repo/b.txt",
+        "content": "x",
+        "structuredPatch": [],
+        "originalFile": null,
+        "userModified": false
+    },
+    "tool_use_id": "toolu_011NXJt2c19a5q3NWKTeYaJm",
+    "duration_ms": 2
+}

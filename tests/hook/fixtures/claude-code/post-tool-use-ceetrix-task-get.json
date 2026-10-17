@@ -1,0 +1,30 @@
+{
+    "session_id": "c6093c60-3fe5-4fcb-850f-e45d05dcc4ab",
+    "transcript_path": "/home/dev/.claude/projects/-home-dev-repo/c6093c60-3fe5-4fcb-850f-e45d05dcc4ab.jsonl",
+    "cwd": "/home/dev/repo",
+    "prompt_id": "0a93645d-f000-4c38-9a99-651b232b687f",
+    "permission_mode": "default",
+    "effort": {
+        "level": "medium"
+    },
+    "hook_event_name": "PostToolUse",
+    "tool_name": "mcp__ceetrix__task",
+    "tool_input": {
+        "action": "get",
+        "story_id": "510",
+        "seq": 22,
+        "remote_url": "git@github.com:boxabirds/claude-backlog.git"
+    },
+    "tool_response": [
+        {
+            "type": "text",
+            "text": "Task 510.22: Recommend one next task whenever no task is bound, the same candidate from the hook, the reminder and what-next\nStatus: proposed\nType: Implementation\nAssignee: unassigned\nImplements: hook.next_task\nForbidden: workers/taskmgr/src/tools/gate-checker.ts, workers/taskmgr/src/services/content-validator.ts\nExpected Scope: workers/taskmgr/src/services/next-task.ts, workers/taskmgr/src/tools/story.ts, workers/taskmgr/src/api/hooks/**, workers/taskmgr/src/prompts/defaults.ts\nRequired Tests: integration, e2e\n\n## Testing Guidance\nThis task requires:\n- integration: Backend tests with real services (vitest + D1)\n- e2e: Full stack browser tests (Playwright)\n\nProvide test_summary in feedback when completing this task.\n\nThis project requires a commit when finishing a task. Commit your work locally first \u2014 pushing is not required \u2014 then supply commit_sha on completion:\n  git rev-parse HEAD\n\n## Body\nOutcome: one server-side function returning at most one recommended next task for (project, user): story id, task sequence, title and the capability's section title, or a no-open-task marker. Added 2026-10-17 (operator: under enforce, block and suggest the next task).\n\nOrdering: start from the what-next order today (priority first, created time second, tools/story.ts:47-49); put first a task on the same capability as the one this user last completed; then a task on a capability nobody has a task in progress on. The function is called by the session route and the bind route (task 510.6) and by the Tenacity prefix (task 510.7), so all three name the same candidate, and what-next uses the same ordering.\n\nNew prompt rows (new keys, with defaults.ts fallbacks) for the next-task line and the instruction to recommend the task to the developer and start it only once they agree, plus the no-open-task variant inviting the agent to ask whether to create a story. If the candidate cannot be computed the field is absent and messages render their variant without a recommendation; nothing is refused because of it.\n\nExcludes the hook-side rendering, which is task 510.2.\nCreated: 2026-10-17T09:01:29.798Z\nUpdated: 2026-10-17T09:23:33.428Z"
+        }
+    ],
+    "tool_use_id": "toolu_01RN1r9moZChzTXaGeyQRDe8",
+    "duration_ms": 1205,
+    "mcp_server": {
+        "name": "ceetrix",
+        "source": "user"
+    }
+}

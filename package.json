@@ -1,6 +1,6 @@
 {
   "name": "ceetrix",
-  "version": "1.2.1",
+  "version": "1.3.0",
   "description": "Connect your coding agent to Ceetrix backlog management - Claude Code, Codex, pi, omp, OpenCode or DeepSeek Harness",
   "bin": {
     "ceetrix": "./bin/ceetrix.js"
@@ -10,7 +10,8 @@
     "node": ">=18.0.0"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && bun run build:hook",
+    "build:hook": "bun build src/hook/main.ts --target=node --format=esm --outfile dist/hook/ceetrix-hook.mjs --define __CEETRIX_HOOK_VERSION__=\\\"$npm_package_version\\\"",
     "dev": "tsc --watch",
     "test": "vitest",
     "test:run": "vitest run",

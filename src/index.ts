@@ -22,6 +22,7 @@ import {
   getStoredConsentStatus,
 } from './consent.js';
 import { runDeviceFlow } from './device-flow.js';
+import { runHooksCommand } from './hook/setup.js';
 
 /** CLI context for debug/diagnostics */
 interface CliContext {
@@ -70,6 +71,13 @@ export async function main(): Promise<void> {
   // must work non-interactively.
   if (rawArgs[0] === 'check-commit') {
     process.exitCode = await runCheckCommit(rawArgs.slice(1));
+    return;
+  }
+
+  // Story 510: write the repo-resident hook configuration for this repository.
+  // Like check-commit: local files only, no network, non-interactive.
+  if (rawArgs[0] === 'hooks') {
+    process.exitCode = await runHooksCommand();
     return;
   }
 
