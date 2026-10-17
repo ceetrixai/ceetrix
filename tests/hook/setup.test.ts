@@ -42,6 +42,14 @@ describe('setupHooks', () => {
     expect(Object.keys(s.hooks).sort()).toEqual([...CLAUDE_CODE_EVENTS].sort());
   });
 
+  // Task 510.5: setup says which hosts it skipped rather than guessing.
+  it('reports Codex CLI and Gemini CLI as skipped, and writes nothing for them', async () => {
+    const r = await setupHooks(repo, { bundlePath: bundle });
+    expect(r.skippedHosts).toEqual(['Codex CLI', 'Gemini CLI']);
+    expect(existsSync(join(repo, '.codex'))).toBe(false);
+    expect(existsSync(join(repo, '.gemini'))).toBe(false);
+  });
+
   it('every entry is a command with an explicit timeout in seconds', async () => {
     await setupHooks(repo, { bundlePath: bundle });
     for (const entry of allEntries(settings())) {

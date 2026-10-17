@@ -100,7 +100,12 @@ export interface SetupResult {
   policyPath: string;
   policyCreated: boolean;
   events: string[];
+  /** Hosts setup does not write for, because the hook does not support them yet. */
+  skippedHosts: readonly string[];
 }
+
+/** Story 510 delivers Claude Code only; these hosts are named so setup can say it skipped them. */
+const NOT_DELIVERED_HOSTS: readonly string[] = ['Codex CLI', 'Gemini CLI'];
 
 /** The bundle sits next to the compiled setup module: dist/hook/. */
 function defaultBundlePath(): string {
@@ -136,7 +141,14 @@ export async function setupHooks(repoRoot: string, opts: { bundlePath?: string }
   mkdirSync(dirname(settingsPath), { recursive: true });
   writeFileSync(settingsPath, `${JSON.stringify(merged, null, JSON_INDENT)}\n`);
 
-  return { settingsPath, hookPath, policyPath, policyCreated, events: CLAUDE_CODE_MATCHERS.map((m) => m.event) };
+  return {
+    settingsPath,
+    hookPath,
+    policyPath,
+    policyCreated,
+    events: CLAUDE_CODE_MATCHERS.map((m) => m.event),
+    skippedHosts: NOT_DELIVERED_HOSTS,
+  };
 }
 
 /**
@@ -162,6 +174,7 @@ export async function runHooksCommand(cwd: string = process.cwd()): Promise<numb
     console.log(`✓ Hook entries for ${r.events.join(', ')} written to ${r.settingsPath}`);
     console.log(`✓ Hook program copied to ${r.hookPath}`);
     console.log(r.policyCreated ? `✓ Default policy written to ${r.policyPath}` : `  Existing policy kept at ${r.policyPath}`);
+    console.log(`  Skipped ${r.skippedHosts.join(' and ')}: the Ceetrix hook supports Claude Code only so far.`);
     console.log('\nCommit .claude/settings.json and .ceetrix/ so everyone working in this repository gets the hooks.');
     return 0;
   } catch (err) {
